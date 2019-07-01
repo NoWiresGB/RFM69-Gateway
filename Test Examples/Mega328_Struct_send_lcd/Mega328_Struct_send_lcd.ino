@@ -27,6 +27,13 @@
 #include <RFM69_ATC.h>     //get it here: https://www.github.com/lowpowerlab/rfm69
 //#include <SPIFlash.h>      //get it here: https://www.github.com/lowpowerlab/spiflash
 #include <SPI.h>           //included with Arduino IDE install (www.arduino.cc)
+#include <Wire.h>
+#include "SSD1306Ascii.h"  // get it here: https://github.com/greiman/SSD1306Ascii
+#include "SSD1306AsciiAvrI2c.h" // included in above https://github.com/greiman/SSD1306Ascii
+#define I2C_ADDRESS 0x3C
+SSD1306AsciiAvrI2c display;
+
+
 //*********************************************************************************************
 //************ IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE *************
 //*********************************************************************************************
@@ -74,6 +81,8 @@ Payload theData;
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
+  display.begin(&Adafruit128x64, I2C_ADDRESS);  // initialize with the I2C addr 0x3c
+  display.setFont(Verdana12);
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
 #ifdef IS_RFM69HW_HCW
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
@@ -167,9 +176,13 @@ void loop() {
     Serial.print("Sending struct (");
     Serial.print(sizeof(theData));
     Serial.print(" bytes) ... ");
-    if (radio.sendWithRetry(GATEWAYID, (const void*)(&theData), sizeof(theData)))
-      Serial.print(" ok!");
-    else Serial.print(" nothing...");
+    if (radio.sendWithRetry(GATEWAYID, (const void*)(&theData), sizeof(theData))) {
+      Serial.println(" ok!");
+      display.println("ACK");
+    } else {
+      Serial.print(" nothing...");
+      display.println(":-(");
+    }
     Serial.println();
     Blink(LED_BUILTIN,3);
     lastPeriod=currPeriod;
