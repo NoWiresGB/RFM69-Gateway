@@ -31,6 +31,7 @@
 #include "SSD1306Ascii.h"  // get it here: https://github.com/greiman/SSD1306Ascii
 #include "SSD1306AsciiAvrI2c.h" // included in above https://github.com/greiman/SSD1306Ascii
 #define I2C_ADDRESS 0x3C
+
 SSD1306AsciiAvrI2c display;
 
 
@@ -45,7 +46,7 @@ SSD1306AsciiAvrI2c display;
 //#define FREQUENCY     RF69_868MHZ
 //#define FREQUENCY     RF69_915MHZ
 #define ENCRYPTKEY    "sampleEncryptKey" //has to be same 16 characters/bytes on all nodes, not more not less!
-//#define IS_RFM69HW_HCW  //uncomment only for RFM69HW/HCW! Leave out if you have RFM69W/CW!
+#define IS_RFM69HW_HCW  //uncomment only for RFM69HW/HCW! Leave out if you have RFM69W/CW!
 //*********************************************************************************************
 //Auto Transmission Control - dials down transmit power to save battery
 //Usually you do not need to always transmit at max output power
@@ -68,9 +69,10 @@ SSD1306AsciiAvrI2c display;
 
 //SPIFlash flash(SS_FLASHMEM, 0xEF30); //EF40 for 16mbit windbond chip
 
-int TRANSMITPERIOD = 300; //transmit a packet to gateway so often (in ms)
+int TRANSMITPERIOD = 1000; //transmit a packet to gateway so often (in ms)
 byte sendSize=0;
 boolean requestACK = false;
+short int count = 0;
 
 typedef struct {
   int           nodeId; //store this nodeId
@@ -81,8 +83,21 @@ Payload theData;
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
+
+  Serial.print("sizing: int[");
+  Serial.print(sizeof(int));
+  Serial.print("] float[");
+  Serial.print(sizeof(float));
+  Serial.print("] ulong[");
+  Serial.print(sizeof(unsigned long));
+  Serial.println("]");
+  
   display.begin(&Adafruit128x64, I2C_ADDRESS);  // initialize with the I2C addr 0x3c
   display.setFont(Verdana12);
+  display.setScroll(true);
+  display.setScrollMode(SCROLL_MODE_AUTO);
+  display.clear();
+  
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
 #ifdef IS_RFM69HW_HCW
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
@@ -100,14 +115,35 @@ void setup() {
 
 long lastPeriod = -1;
 void loop() {
+
+  char count_buff[6];
+  
   //process any serial input
   if (Serial.available() > 0)
   {
     char input = Serial.read();
     if (input >= 48 && input <= 57) //[0,9]
     {
-      TRANSMITPERIOD = 100 * (input-48);
+      TRANSMITPERIOD = 200 * (input-48);
       if (TRANSMITPERIOD == 0) TRANSMITPERIOD = 1000;
+      Serial.print("\nChanging delay to ");
+      Serial.print(TRANSMITPERIOD);
+      Serial.println("ms\n");
+    }
+
+    if (input == '+') //+ = increment tx pause delay
+    {
+      TRANSMITPERIOD += 100;
+      if (TRANSMITPERIOD == 10100) TRANSMITPERIOD = 10000;
+      Serial.print("\nChanging delay to ");
+      Serial.print(TRANSMITPERIOD);
+      Serial.println("ms\n");
+    }
+
+    if (input == '-') //- = decrement tx pause delay
+    {
+      TRANSMITPERIOD -= 100;
+      if (TRANSMITPERIOD == 0) TRANSMITPERIOD = 100;
       Serial.print("\nChanging delay to ");
       Serial.print(TRANSMITPERIOD);
       Serial.println("ms\n");
@@ -119,33 +155,7 @@ void loop() {
     //  radio.encrypt(ENCRYPTKEY);
     //if (input == 'e') //e=disable encryption
     //  radio.encrypt(null);
-    
-//    if (input == 'd') //d=dump flash area
-//    {
-//      Serial.println("Flash content:");
-//      int counter = 0;
-//
-//      while(counter<=256){
-//        Serial.print(flash.readByte(counter++), HEX);
-//        Serial.print('.');
-//      }
-//      while(flash.busy());
-//      Serial.println();
-//    }
-//    if (input == 'e')
-//    {
-//      Serial.print("Erasing Flash chip ... ");
-//      flash.chipErase();
-//      while(flash.busy());
-//      Serial.println("DONE");
-//    }
-//    if (input == 'i')
-//    {
-//      Serial.print("DeviceID: ");
-//      word jedecid = flash.readDeviceId();
-//      Serial.println(jedecid, HEX);
-//    }
-  }
+  } 
 
   //check for any received packets
   if (radio.receiveDone())
@@ -172,17 +182,28 @@ void loop() {
     theData.nodeId = NODEID;
     theData.uptime = millis();
     theData.temp = 91.23; //it's hot!
+
+    if ( count++ > 9998 )
+      count = 0;
+    sprintf(count_buff,"%04d ",count);
+ 
+    Serial.print(count_buff);   
+    Serial.print("TX [");
+
+    display.print(count_buff);
     
-    Serial.print("Sending struct (");
     Serial.print(sizeof(theData));
-    Serial.print(" bytes) ... ");
+    Serial.print(" b]: ");
     if (radio.sendWithRetry(GATEWAYID, (const void*)(&theData), sizeof(theData))) {
-      Serial.println(" ok!");
-      display.println("ACK");
+      Serial.print("OK ");
+      Serial.print(radio.readRSSI());
+      display.print("OK: ");
+      display.println(radio.readRSSI());
     } else {
-      Serial.print(" nothing...");
-      display.println(":-(");
+      Serial.print("NO RESPONSE");
+      display.println("NO RESP");
     }
+    
     Serial.println();
     Blink(LED_BUILTIN,3);
     lastPeriod=currPeriod;
