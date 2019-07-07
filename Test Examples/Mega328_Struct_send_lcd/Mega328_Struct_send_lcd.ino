@@ -34,7 +34,6 @@
 
 SSD1306AsciiAvrI2c display;
 
-
 //*********************************************************************************************
 //************ IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE *************
 //*********************************************************************************************
@@ -69,7 +68,7 @@ SSD1306AsciiAvrI2c display;
 
 //SPIFlash flash(SS_FLASHMEM, 0xEF30); //EF40 for 16mbit windbond chip
 
-int TRANSMITPERIOD = 1000; //transmit a packet to gateway so often (in ms)
+int TRANSMITPERIOD = 30000; //transmit a packet to gateway so often (in ms)
 byte sendSize=0;
 boolean requestACK = false;
 short int count = 0;
@@ -84,13 +83,13 @@ Payload theData;
 void setup() {
   Serial.begin(SERIAL_BAUD);
 
-  Serial.print("sizing: int[");
-  Serial.print(sizeof(int));
-  Serial.print("] float[");
-  Serial.print(sizeof(float));
-  Serial.print("] ulong[");
-  Serial.print(sizeof(unsigned long));
-  Serial.println("]");
+  //Serial.print("sizing: int[");
+  //Serial.print(sizeof(int));
+  //Serial.print("] float[");
+  //Serial.print(sizeof(float));
+  //Serial.print("] ulong[");
+  //Serial.print(sizeof(unsigned long));
+  //Serial.println("]");
   
   display.begin(&Adafruit128x64, I2C_ADDRESS);  // initialize with the I2C addr 0x3c
   display.setFont(Verdana12);
@@ -113,11 +112,10 @@ void setup() {
 //    Serial.println("SPI Flash Init FAIL! (is chip present?)");
 }
 
-long lastPeriod = -1;
+long lastPeriod = 0;
 void loop() {
 
   char count_buff[6];
-  
   //process any serial input
   if (Serial.available() > 0)
   {
@@ -134,7 +132,7 @@ void loop() {
     if (input == '+') //+ = increment tx pause delay
     {
       TRANSMITPERIOD += 100;
-      if (TRANSMITPERIOD == 10100) TRANSMITPERIOD = 10000;
+      if (TRANSMITPERIOD == 600100) TRANSMITPERIOD = 6000000;
       Serial.print("\nChanging delay to ");
       Serial.print(TRANSMITPERIOD);
       Serial.println("ms\n");
@@ -175,12 +173,23 @@ void loop() {
     Serial.println();
   }
   
-  int currPeriod = millis()/TRANSMITPERIOD;
-  if (currPeriod != lastPeriod)
+  // time to send data yet?
+  //int currPeriod = millis()/TRANSMITPERIOD;  <- who does this?! :D
+  long unsigned int current_ms=millis();
+  long unsigned int diff_ms = current_ms - lastPeriod;
+
+  // some debug shizzle
+  //Serial.print(current_ms);
+  //Serial.print(" - ");
+  //Serial.print(lastPeriod);
+  //Serial.print(" = ");
+  //Serial.println(diff_ms);
+  
+  if ( diff_ms > TRANSMITPERIOD )
   {
     //fill in the struct with new values
     theData.nodeId = NODEID;
-    theData.uptime = millis();
+    theData.uptime = current_ms;
     theData.temp = 91.23; //it's hot!
 
     if ( count++ > 9998 )
@@ -206,7 +215,7 @@ void loop() {
     
     Serial.println();
     Blink(LED_BUILTIN,3);
-    lastPeriod=currPeriod;
+    lastPeriod=current_ms;
   }
 }
 
