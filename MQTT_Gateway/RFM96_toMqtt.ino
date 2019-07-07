@@ -107,6 +107,11 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 #define DELAYVAL 500 // Time (in milliseconds) to pause between pixels
 
+
+//*********************************************************************************************
+// Other nasty globals
+//*********************************************************************************************
+
 // led pin
 const byte led_pin = 2; // internal LED pin on esp12g
 
@@ -134,20 +139,45 @@ typedef struct __attribute__((__packed__))  { // turn off padding to allow struc
 } Payload;
 Payload theData;
 
+
+//*********************************************************************************************
+// Global objects
+//*********************************************************************************************
+
 // complex type globals
 // esp wifi object
 WiFiClient espClient;
 // MQTT client object
 PubSubClient client(espClient);
 
-void Blink(byte PIN, int DELAY_MS)
-{
-  pinMode(PIN, OUTPUT);
-  digitalWrite(PIN,HIGH);
-  delay(DELAY_MS);
-  digitalWrite(PIN,LOW);
-}
 
+//*********************************************************************************************
+// helper functions
+//*********************************************************************************************
+
+// led blink function
+//----------------------------------------------------------------------------------
+void ledBlink(int pin, int duration_ms) {
+  digitalWrite(pin, LOW);
+  delay(duration_ms);
+  digitalWrite(pin, HIGH);
+} // endfunc
+
+// small blinky function
+//----------------------------------------------------------------------------------
+void doBlinky(int pin, int duration_ms, int blinks) {
+  for ( int i = 0; i < blinks; i++ ) {
+    ledBlink(pin,duration_ms);
+    delay(duration_ms);
+  } // end for
+} // endfunc
+
+
+//*********************************************************************************************
+// init functions
+//*********************************************************************************************
+
+//----------------------------------------------------------------------------------
 void initRadio()
 {
   // hard reset radio board
@@ -178,8 +208,6 @@ void initRadio()
 }
 
 //----------------------------------------------------------------------------------
-
-//----------------------------------------------------------------------------------
 void init_pins(){
     Serial.print("[PINS] setting up internal pins:  ");
     
@@ -189,6 +217,7 @@ void init_pins(){
     Serial.println("done");
 }
 
+//----------------------------------------------------------------------------------
 void init_neopixels(){
     Serial.print("[NEO] setting up NEO PIXELS: ");
     
@@ -197,7 +226,6 @@ void init_neopixels(){
 
     Serial.println("done");
 }
-
 
 //----------------------------------------------------------------------------------
 void init_wifi() {
@@ -220,6 +248,10 @@ void init_wifi() {
   Serial.println(WiFi.localIP());
   Serial.println("[WIFI] Setup complete");
 }
+
+//*********************************************************************************************
+// mqtt functions
+//*********************************************************************************************
 
 //----------------------------------------------------------------------------------
 void init_mqtt() {
@@ -294,25 +326,11 @@ void mqtt_reconnect() {
   }
 }
 
-// led blink function
+//*********************************************************************************************
+// event handler functions
+//*********************************************************************************************
+
 //----------------------------------------------------------------------------------
-void ledBlink(int pin, int duration_ms) {
-  digitalWrite(pin, LOW);
-  delay(duration_ms);
-  digitalWrite(pin, HIGH);
-} // endfunc
-
-// small blinky function
-//----------------------------------------------------------------------------------
-void doBlinky(int pin, int duration_ms, int blinks) {
-  for ( int i = 0; i < blinks; i++ ) {
-    ledBlink(pin,duration_ms);
-    delay(duration_ms);
-  } // end for
-} // endfunc
-
-
-
 void handleSerial(){
     char input = Serial.read();
 
@@ -362,6 +380,7 @@ void handleSerial(){
 //    }
 }
 
+//----------------------------------------------------------------------------------
 void handleRadioReceive(){
 
     // output info on received radio data
@@ -436,7 +455,6 @@ void handleRadioReceive(){
     }
 
     Serial.println();
-    Blink(LED_BUILTIN,3);
 }
 
 //*********************************************************************************************
@@ -463,8 +481,6 @@ void setup() {
   // mDNS MQTT setup
   init_mqtt();
 
-
-
   // initialise RFM96
   initRadio();
 
@@ -472,11 +488,9 @@ void setup() {
 
 
 //*********************************************************************************************
-//*********** LOOP ***************************************************************************
+//*********** MAIN LOOP ***************************************************************************
 //*********************************************************************************************
-
 void loop() {
-
   // call MQTT loop to handle active connection
   if (!client.connected()) {
     mqtt_reconnect();
@@ -496,7 +510,6 @@ void loop() {
       cur_width = 0;
     }
   } // endif
-  
   
   // handle any serial input
   if (Serial.available() > 0)
