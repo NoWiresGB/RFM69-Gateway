@@ -42,7 +42,7 @@ const char* password = "";  //Your Wifi Password
 #define SERIAL_BAUD 115200
 
 // MQTT settings
-String mqtt_server = "";
+String mqtt_server = "192.168.0.254";
 int mqtt_port = 1883;
 String mqtt_clientId = "";
 String mqtt_topic = "";
@@ -137,7 +137,7 @@ void initRadio()
   Serial.print(ENCRYPTKEY);
   Serial.println("]");
   radio.encrypt(ENCRYPTKEY);
-  radio.promiscuous(promiscuousMode); 
+  radio.spyMode(promiscuousMode); 
 
   Serial.print("[RFM96] initialised, listening @");
   char buff[10];
@@ -162,7 +162,7 @@ void init_neopixels(){
  *  Initialise WiFi (via WifiManager)
  */
 void init_wifi() {
-  Serial.println("[WIFI] Setup begin");
+  Serial.println("[WIFI ] Setup begin");
 
   // start WiFi auto configuration
   WiFiManager wifiManager;
@@ -183,18 +183,18 @@ void init_wifi() {
 void init_mqtt() {
   // mDNS to discover MQTT server
   if (!MDNS.begin("ESP")) {
-    Serial.println("[mDNS] Error setting up mDNS");
+    Serial.println("[mDNS ] Error setting up mDNS");
   } else {
-    Serial.println("[mDNS] Setup - Sending Query");
+    Serial.println("[mDNS ] Setup - Sending Query");
     int n = MDNS.queryService("mqtt", "tcp");
     if (n == 0) {
-      Serial.println("[mDNS] No service found");
+      Serial.println("[mDNS ] No service found");
     } else {
       // at least one MQTT service is found
       // ip no and port of the first one is MDNS.IP(0) and MDNS.port(0)
       mqtt_server = MDNS.IP(0).toString();
       mqtt_port = MDNS.port(0);
-      Serial.print("[mDNS] Service discovered: ");
+      Serial.print("[mDNS ] Service discovered: ");
       Serial.print(mqtt_server);
       Serial.print(":");
       Serial.println(mqtt_port);
@@ -206,21 +206,20 @@ void init_mqtt() {
   mqtt_topic = mqtt_base_topic + "/" + mqtt_clientId + "/";
   
   // mqtt setup (setup unqiue client id from mac
-  Serial.println("[MQTT] initiliasing");
-  Serial.print("(MQTT] clientId: ");
+  Serial.println("[MQTT ] initiliasing");
+  Serial.print("[MQTT ] clientId: ");
   Serial.println(mqtt_clientId);
-  Serial.print("[MQTT] topic: ");
+  Serial.print("[MQTT ] topic: ");
   Serial.println(mqtt_topic);
-    client.setServer(mqtt_server.c_str(), mqtt_port);
+  client.setServer(mqtt_server.c_str(), mqtt_port);
   client.setCallback(mqtt_callback);
-  //nb mqtt connection is handled later..
 }
 
 /*
  *  Handle data received over MQTT
  */
 void mqtt_callback(char* topic, byte * payload, unsigned int length) {
-  Serial.print("[MQTT] Message arrived [");
+  Serial.print("[MQTT ] Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
   for (unsigned int i = 0; i < length; i++) {
@@ -235,8 +234,7 @@ void mqtt_callback(char* topic, byte * payload, unsigned int length) {
  */
 void mqtt_reconnect() {
   int exit = 1;
-  Serial.println();
-  Serial.print("[MQTT] Not connected! Attempting new connection: ");
+  Serial.print("[MQTT ] Not connected! Attempting new connection: ");
   while (!client.connected() && exit == 1 ) {
     Serial.print("#");
     if (client.connect(mqtt_clientId.c_str())) {
@@ -259,86 +257,85 @@ void mqtt_reconnect() {
  *  Handle serial input
  */
 void handleSerial() {
-    // this will be removed at a later stage
-    // as this functionality will be served
-    // over a web page
-    char input = Serial.read();
+  // this will be removed at a later stage
+  // as this functionality will be served
+  // over a web page
+  char input = Serial.read();
 
-    Serial.println();
-    Serial.print("# Serial input:[");
-    Serial.print(input);
-    Serial.println("]");
+  Serial.println();
+  Serial.print("# Serial input:[");
+  Serial.print(input);
+  Serial.println("]");
 
-    // handle input command
-    if (input == 'r') //d=dump all register values
-      radio.readAllRegs();
-    if (input == 'E') //E=enable encryption
-      radio.encrypt(ENCRYPTKEY);
-    if (input == 'e') //e=disable encryption
-      radio.encrypt(null);
-    if (input == 'p')
-    {
-      promiscuousMode = !promiscuousMode;
-      radio.spyMode(promiscuousMode);
-      Serial.print("Promiscuous mode ");Serial.println(promiscuousMode ? "on" : "off");
-    }
+  // handle input command
+  if (input == 'r') //d=dump all register values
+    radio.readAllRegs();
+  if (input == 'E') //E=enable encryption
+    radio.encrypt(ENCRYPTKEY);
+  if (input == 'e') //e=disable encryption
+    radio.encrypt(null);
+  if (input == 'p')
+  {
+    promiscuousMode = !promiscuousMode;
+    radio.spyMode(promiscuousMode);
+    Serial.print("Promiscuous mode ");Serial.println(promiscuousMode ? "on" : "off");
+  }
 }
 
 /*
  *  Process data received over radio
  */
-void handleRadioReceive(){
+void handleRadioReceive() {
+  // output info on received radio data
+  Serial.println();
+  Serial.print("[RFM96] RCVD [Node:");Serial.print(radio.SENDERID, DEC);
+  Serial.print("  RSSI:");Serial.print(radio.readRSSI());Serial.print("] ");    
+  if (promiscuousMode) {
+    Serial.print("to [");Serial.print(radio.TARGETID, DEC);Serial.print("] ");
+  }
+  Serial.println();
 
-    // output info on received radio data
-    Serial.println();
-    Serial.print("[RFM96] RCVD [Node:");Serial.print(radio.SENDERID, DEC);
-    Serial.print("  RSSI:");Serial.print(radio.readRSSI());Serial.print("] ");    
-    if (promiscuousMode) {
-      Serial.print("to [");Serial.print(radio.TARGETID, DEC);Serial.print("] ");
-    }
-    Serial.println();
+  // output raw data payload
+  Serial.print(" > Data received [");
+  Serial.print(radio.DATALEN);
+  Serial.print("b]: [");
+  for (byte i = 0; i < radio.DATALEN; i++){
+    Serial.print((char)radio.DATA[i],HEX);
+    Serial.print(" ");
+  }
+  Serial.println("]");
 
-    // output raw data payload
-    Serial.print(" > Data received [");
-    Serial.print(radio.DATALEN);
-    Serial.print("b]: [");
-    for (byte i = 0; i < radio.DATALEN; i++){
-      Serial.print((char)radio.DATA[i],HEX);
-      Serial.print(" ");
-    }
-    Serial.println("]");
+  // check node id (understand expected incoming data structure)
+  
+  //theData = *(Payload*)radio.DATA; //assume radio.DATA actually contains our struct and not something else
+  // temporary char* to work around strict aliasing
+  char *tPtr = (char*)radio.DATA;
+  theData = *(Payload*)tPtr;
+  Serial.print(" > vars: nodeId=");
+  Serial.print(theData.nodeId);
+  Serial.print(" uptime=");
+  Serial.print(theData.uptime);
+  Serial.print(" temp=");
+  Serial.print(theData.temp);
+  Serial.println();
 
-    // check node id (understand expected incoming data structure)
-    
-    //theData = *(Payload*)radio.DATA; //assume radio.DATA actually contains our struct and not something else
-    // temporary char* to work around strict aliasing
-    char *tPtr = (char*)radio.DATA;
-    theData = *(Payload*)tPtr;
-    Serial.print(" > vars: nodeId=");
-    Serial.print(theData.nodeId);
-    Serial.print(" uptime=");
-    Serial.print(theData.uptime);
-    Serial.print(" temp=");
-    Serial.print(theData.temp);
-    Serial.println();
+  // push data to mqtt
+  Serial.print(" > Pushing data to MQTT: ");
+  client.publish(String(mqtt_topic + theData.nodeId + "/trigger").c_str(), "");
+  client.publish(String(mqtt_topic + theData.nodeId + "/uptime" ).c_str(), String(theData.uptime).c_str() );
+  client.publish(String(mqtt_topic + theData.nodeId + "/temp" ).c_str(), String(theData.temp).c_str()  );
+  Serial.println("done");
 
-    // push data to mqtt
-    Serial.print(" > Pushing data to MQTT: ");
-    client.publish(String(mqtt_topic + theData.nodeId + "/trigger").c_str(), "");
-    client.publish(String(mqtt_topic + theData.nodeId + "/uptime" ).c_str(), String(theData.uptime).c_str() );
-    client.publish(String(mqtt_topic + theData.nodeId + "/temp" ).c_str(), String(theData.temp).c_str()  );
-    Serial.println("done");
+  // send back ack if requested (do this ASAP - before other processing)
+  if (radio.ACKRequested())
+  {
+    // send back ack 
+    Serial.print(" > Ack requested, sending: ");
+    radio.sendACK();
+    Serial.println("sent.");
+  }
 
-    // send back ack if requested (do this ASAP - before other processing)
-    if (radio.ACKRequested())
-    {
-      // send back ack 
-      Serial.print(" > Ack requested, sending: ");
-      radio.sendACK();
-      Serial.println("sent.");
-    }
-
-    Serial.println();
+  Serial.println();
 }
 
 /*
@@ -348,9 +345,8 @@ void setup() {
   Serial.begin(SERIAL_BAUD);
 
   Serial.println();
-  Serial.println("================================");
-  Serial.println("[SETUP] Starting");
   Serial.println("--------------------------------");
+  Serial.println("[SETUP] Starting");
 
   // setup neopixel
   init_neopixels();
@@ -365,6 +361,7 @@ void setup() {
   initRadio();
 
   Serial.println("[SETUP] Complete");
+  Serial.println("--------------------------------");
 }
 
 /*
@@ -401,4 +398,3 @@ void loop() {
     handleRadioReceive();
   }
 }
- 
