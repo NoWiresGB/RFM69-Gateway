@@ -26,7 +26,7 @@
 #include <SPI.h>           //included with Arduino IDE install (www.arduino.cc)
 
 // ESPwifi / mDNS / MQTT libs
-#include <ESP8266WiFi.h>    / included with ESP8266 board def install
+#include <ESP8266WiFi.h>    // included with ESP8266 board def install
 #include <ESP8266mDNS.h>    // included with ESP8266 board def install
 #include <PubSubClient.h>   // get it here : https://github.com/knolleary/pubsubclient
 #include "RFM96_toMqtt.h"   // local settings : please create to store wifi credentials
