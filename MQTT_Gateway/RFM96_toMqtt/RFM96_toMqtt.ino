@@ -30,6 +30,7 @@
 #include <ESP8266WiFi.h>    // included with ESP8266 board def install
 #include <ESP8266mDNS.h>    // included with ESP8266 board def install
 #include <PubSubClient.h>   // get it here : https://github.com/knolleary/pubsubclient
+#include <WiFiManager.h>
 
 // WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
@@ -111,7 +112,6 @@ WiFiClient espClient;
 // MQTT client object
 PubSubClient client(espClient);
 
-
 /*
  *  Helper LED blink function
  */
@@ -159,27 +159,21 @@ void init_neopixels(){
 }
 
 /*
- *  Initialise WiFi
- *  (will change to WiFiManager at a later stage)
+ *  Initialise WiFi (via WifiManager)
  */
 void init_wifi() {
-  //##################################
-  // connect to wifi
-  Serial.println("[WIFI] initialising");
-  Serial.print("[WIFI] MAC: ");
-  Serial.println(WiFi.macAddress());
-  Serial.print("[WIFI] SSID:");
-  Serial.println(ssid);
+  Serial.println("[WIFI] Setup begin");
 
-  Serial.print("[WIFI] Attaching: ");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.print("[WIFI] connected IP: ");
+  // start WiFi auto configuration
+  WiFiManager wifiManager;
+  wifiManager.autoConnect("RFM69-Gw_AutoConfig");
+
+  // dump some info to serial once we're connected
+  Serial.print("[WIFI ] Connected to ");
+  Serial.println(WiFi.SSID());
+  Serial.print("[WIFI ] IP address: ");
   Serial.println(WiFi.localIP());
+
   Serial.println("[WIFI] Setup complete");
 }
 
