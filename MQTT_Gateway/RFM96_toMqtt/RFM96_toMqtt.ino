@@ -1,6 +1,7 @@
 // **********************************************************************************
-// ninja rfm69 iot sensor to mqtt (d1) gateway
+// OwlTronics RFM69 IoT sensor to MQTT (D1) gateway
 // **********************************************************************************
+
 // This program is free software; you can redistribute it 
 // and/or modify it under the terms of the GNU General    
 // Public License as published by the Free Software       
@@ -29,23 +30,16 @@
 #include <ESP8266WiFi.h>    // included with ESP8266 board def install
 #include <ESP8266mDNS.h>    // included with ESP8266 board def install
 #include <PubSubClient.h>   // get it here : https://github.com/knolleary/pubsubclient
-#include "RFM96_toMqtt.h"   // local settings : please create to store wifi credentials
 
-// RFM69 pauliexpress WS2812 LEDs
+// WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
 
-//const char* ssid = ""; //your WiFi Name
-//const char* password = "";  //Your Wifi Password
-
-//*********************************************************************************************
-//*********** IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE *************
-//*********************************************************************************************
+// included here temporarily
+const char* ssid = ""; //your WiFi Name
+const char* password = "";  //Your Wifi Password
 
 #define SERIAL_BAUD 115200
 
-//*********************************************************************************************
-// wifi settings - in RFM96_toMqtt.h
-//*********************************************************************************************
 // MQTT settings
 String mqtt_server = "";
 int mqtt_port = 1883;
@@ -61,69 +55,37 @@ String msg = "";
 #define NODEID      1
 #define NETWORKID   100
 //Match frequency to the hardware version of the radio on your Moteino (uncomment one):
-#define FREQUENCY     RF69_433MHZ
-//#define FREQUENCY     RF69_868MHZ
-//#define FREQUENCY     RF69_915MHZ
-#define ENCRYPTKEY    "sampleEncryptKey" //has to be same 16 characters/bytes on all nodes, not more not less!
+#define FREQUENCY    RF69_433MHZ // other options are RF69_868MHZ and RF69_915MHZ
+#define ENCRYPTKEY   "sampleEncryptKey" //has to be same 16 characters/bytes on all nodes, not more not less!
 //#define IS_RFM69HW_HCW  //uncomment only for RFM69HW/HCW! Leave out if you have RFM69W/CW!
-#define ESP8266
 
-//*********************************************************************************************
 //Auto Transmission Control - dials down transmit power to save battery
-//Usually you do not need to always transmit at max output power
-//By reducing TX power even a little you save a significant amount of battery power
-//This setting enables this gateway to work with remote nodes that have ATC enabled to
-//dial their power down to only the required level
-//#define ENABLE_ATC    //comment out this line to disable AUTO TRANSMISSION CONTROL
-//*********************************************************************************************
-#if defined (MOTEINO_M0) && defined(SERIAL_PORT_USBVIRTUAL)
-  #define Serial SERIAL_PORT_USBVIRTUAL // Required for Serial on Zero based boards
-#endif
+#define ENABLE_ATC    // comment out this line to disable AUTO TRANSMISSION CONTROL
 
 #ifdef ENABLE_ATC
-  RFM69_ATC radio;
+  RFM69_ATC radio(D0, D8);;
 #else
-  RFM69 radio;
+  RFM69 radio(D0, D8);;
 #endif
 
-bool promiscuousMode = false; //set to 'true' to sniff all packets on the same network
-
+//set to 'true' to sniff all packets on the same network
+bool promiscuousMode = false;
 
 //*********************************************************************************************
 // WS2812 neopixel stuff
 //*********************************************************************************************
-
-// Which pin on the Arduino is connected to the NeoPixels?
 #define PIXEL_PIN D3 // On Trinket or Gemma, suggest changing this to 1
-
-// How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS 16 // Popular NeoPixel ring size
-
-// When setting up the NeoPixel library, we tell it how many pixels,
-// and which pin to use to send signals. Note that for older NeoPixel
-// strips you might need to change the third parameter -- see the
-// strandtest example for more information on possible values.
+#define NUMPIXELS 2
 Adafruit_NeoPixel pixels(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 #define DELAYVAL 500 // Time (in milliseconds) to pause between pixels
 
-
-//*********************************************************************************************
-// Other nasty globals
-//*********************************************************************************************
-
-// led pin
-const byte led_pin = 2; // internal LED pin on esp12g
-
 // how often whilst waiting for input to do HB indicator
-int HB = 10000;
+unsigned int HB = 10000;
 int micro_sleep = 50;
 
 // number of chars on output for HB indicator line wrap
 int max_width = 40;
-
-// count acknoledgements
-byte ackCount=0;
 
 // polling loop ms register
 long unsigned int last_check_millis = 0;
@@ -144,55 +106,32 @@ Payload theData;
 // Global objects
 //*********************************************************************************************
 
-// complex type globals
 // esp wifi object
 WiFiClient espClient;
 // MQTT client object
 PubSubClient client(espClient);
 
 
-//*********************************************************************************************
-// helper functions
-//*********************************************************************************************
-
-// led blink function
-//----------------------------------------------------------------------------------
+/*
+ *  Helper LED blink function
+ */
 void ledBlink(int pin, int duration_ms) {
   digitalWrite(pin, LOW);
   delay(duration_ms);
   digitalWrite(pin, HIGH);
-} // endfunc
+}
 
-// small blinky function
-//----------------------------------------------------------------------------------
-void doBlinky(int pin, int duration_ms, int blinks) {
-  for ( int i = 0; i < blinks; i++ ) {
-    ledBlink(pin,duration_ms);
-    delay(duration_ms);
-  } // end for
-} // endfunc
-
-
-//*********************************************************************************************
-// init functions
-//*********************************************************************************************
-
-//----------------------------------------------------------------------------------
+/*
+ *  Initialise RFM69 module
+ */
 void initRadio()
 {
-  // hard reset radio board
- /* pinMode(5, OUTPUT);
-  digitalWrite(5, HIGH);
-  delay(100);
-  digitalWrite(5, LOW);
-  delay(100); */
-
   Serial.println("[RFM96] initialising");
   
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
 #ifdef IS_RFM69HW_HCW
-  Serial.println("[RFM96] setting how power (HCW defined)");
-  radio.setHighPower(); //must include this only for RFM69HW/HCW!
+  Serial.println("[RFM96] setting high power (HCW defined)");
+  radio.setHighPower();
 #endif
   Serial.print("[RFM96] setting enc key: [");
   Serial.print(ENCRYPTKEY);
@@ -201,33 +140,28 @@ void initRadio()
   radio.promiscuous(promiscuousMode); 
 
   Serial.print("[RFM96] initialised, listening @");
-  char buff[50];
+  char buff[10];
   sprintf(buff, "%d Mhz", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
   Serial.println(buff);
-
 }
 
-//----------------------------------------------------------------------------------
-void init_pins(){
-    Serial.print("[PINS] setting up internal pins:  ");
-    
-    pinMode(led_pin, OUTPUT);
-    digitalWrite(led_pin, HIGH);
-
-    Serial.println("done");
-}
-
-//----------------------------------------------------------------------------------
+/*
+ *  Initialise the onboard NeoPixels
+ */
 void init_neopixels(){
-    Serial.print("[NEO] setting up NEO PIXELS: ");
+    Serial.println("[NEOPX] Setting up NeoPixels");
     
     pixels.begin();
     pixels.clear(); 
+    pixels.show();
 
-    Serial.println("done");
+    Serial.println("[NEOPX] NeoPixel init complete");
 }
 
-//----------------------------------------------------------------------------------
+/*
+ *  Initialise WiFi
+ *  (will change to WiFiManager at a later stage)
+ */
 void init_wifi() {
   //##################################
   // connect to wifi
@@ -249,11 +183,9 @@ void init_wifi() {
   Serial.println("[WIFI] Setup complete");
 }
 
-//*********************************************************************************************
-// mqtt functions
-//*********************************************************************************************
-
-//----------------------------------------------------------------------------------
+/*
+ *  Connect to MQTT server
+ */
 void init_mqtt() {
   // mDNS to discover MQTT server
   if (!MDNS.begin("ESP")) {
@@ -272,7 +204,6 @@ void init_mqtt() {
       Serial.print(mqtt_server);
       Serial.print(":");
       Serial.println(mqtt_port);
-      
     }
   }
 
@@ -291,19 +222,23 @@ void init_mqtt() {
   //nb mqtt connection is handled later..
 }
 
-//----------------------------------------------------------------------------------
+/*
+ *  Handle data received over MQTT
+ */
 void mqtt_callback(char* topic, byte * payload, unsigned int length) {
   Serial.print("[MQTT] Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
-  for (int i = 0; i < length; i++) {
+  for (unsigned int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
 }
 
-// mqtt stuff
-//----------------------------------------------------------------------------------
+/*
+ *  Reconnect to MQTT server
+ *  (will need to rewrite it to be non-blocking)
+ */
 void mqtt_reconnect() {
   int exit = 1;
   Serial.println();
@@ -326,12 +261,13 @@ void mqtt_reconnect() {
   }
 }
 
-//*********************************************************************************************
-// event handler functions
-//*********************************************************************************************
-
-//----------------------------------------------------------------------------------
-void handleSerial(){
+/*
+ *  Handle serial input
+ */
+void handleSerial() {
+    // this will be removed at a later stage
+    // as this functionality will be served
+    // over a web page
     char input = Serial.read();
 
     Serial.println();
@@ -349,38 +285,14 @@ void handleSerial(){
     if (input == 'p')
     {
       promiscuousMode = !promiscuousMode;
-      radio.promiscuous(promiscuousMode);
+      radio.spyMode(promiscuousMode);
       Serial.print("Promiscuous mode ");Serial.println(promiscuousMode ? "on" : "off");
     }
-    
-//    if (input == 'd') //d=dump flash area
-//    {
-//      Serial.println("Flash content:");
-//      int counter = 0;
-//
-//      while(counter<=256){
-//        Serial.print(flash.readByte(counter++), HEX);
-//        Serial.print('.');
-//      }
-//      while(flash.busy());
-//      Serial.println();
-//    }
-//    if (input == 'D')
-//    {
-//      Serial.print("Deleting Flash chip content... ");
-//      flash.chipErase();
-//      while(flash.busy());
-//      Serial.println("DONE");
-//    }
-//    if (input == 'i')
-//    {
-//      Serial.print("DeviceID: ");
-//      word jedecid = flash.readDeviceId();
-//      Serial.println(jedecid, HEX);
-//    }
 }
 
-//----------------------------------------------------------------------------------
+/*
+ *  Process data received over radio
+ */
 void handleRadioReceive(){
 
     // output info on received radio data
@@ -391,7 +303,6 @@ void handleRadioReceive(){
       Serial.print("to [");Serial.print(radio.TARGETID, DEC);Serial.print("] ");
     }
     Serial.println();
-
 
     // output raw data payload
     Serial.print(" > Data received [");
@@ -405,73 +316,48 @@ void handleRadioReceive(){
 
     // check node id (understand expected incoming data structure)
     
-    //if (radio.DATALEN != sizeof(Payload))
-    if (1 == 0 )
-      Serial.print("Err: Invalid payload received, not matching Payload struct!");
-    else
-    {
-      theData = *(Payload*)radio.DATA; //assume radio.DATA actually contains our struct and not something else
-      Serial.print(" > vars: nodeId=");
-      Serial.print(theData.nodeId);
-      Serial.print(" uptime=");
-      Serial.print(theData.uptime);
-      Serial.print(" temp=");
-      Serial.print(theData.temp);
-      Serial.println();
+    //theData = *(Payload*)radio.DATA; //assume radio.DATA actually contains our struct and not something else
+    // temporary char* to work around strict aliasing
+    char *tPtr = (char*)radio.DATA;
+    theData = *(Payload*)tPtr;
+    Serial.print(" > vars: nodeId=");
+    Serial.print(theData.nodeId);
+    Serial.print(" uptime=");
+    Serial.print(theData.uptime);
+    Serial.print(" temp=");
+    Serial.print(theData.temp);
+    Serial.println();
 
-      // push data to mqtt
-      Serial.print(" > Pushing data to MQTT: ");
-      client.publish(String(mqtt_topic + theData.nodeId + "/trigger").c_str(), "");
-      client.publish(String(mqtt_topic + theData.nodeId + "/uptime" ).c_str(), String(theData.uptime).c_str() );
-      client.publish(String(mqtt_topic + theData.nodeId + "/temp" ).c_str(), String(theData.temp).c_str()  );
-      Serial.println("done");
-    }
-
+    // push data to mqtt
+    Serial.print(" > Pushing data to MQTT: ");
+    client.publish(String(mqtt_topic + theData.nodeId + "/trigger").c_str(), "");
+    client.publish(String(mqtt_topic + theData.nodeId + "/uptime" ).c_str(), String(theData.uptime).c_str() );
+    client.publish(String(mqtt_topic + theData.nodeId + "/temp" ).c_str(), String(theData.temp).c_str()  );
+    Serial.println("done");
 
     // send back ack if requested (do this ASAP - before other processing)
     if (radio.ACKRequested())
     {
-      byte theNodeID = radio.SENDERID;
-
       // send back ack 
       Serial.print(" > Ack requested, sending: ");
       radio.sendACK();
       Serial.println("sent.");
-
-      // When a node requests an ACK, respond to the ACK
-      // and also send a packet requesting an ACK (every 3rd one only)
-      // This way both TX/RX NODE functions are tested on 1 end at the GATEWAY
-      if (ackCount++%3==0)
-      {
-        Serial.print(" > Periodic ping node check to [");
-        Serial.print(theNodeID);
-        Serial.print("] sending:");
-        delay(3); //need this when sending right after reception .. ?
-        if (radio.sendWithRetry(theNodeID, "ACK TEST", 8, 0))  // 0 = only 1 attempt, no retries
-          Serial.println(" OK");
-        else 
-          Serial.println("NO RESPONSE");
-      }
     }
 
     Serial.println();
 }
 
-//*********************************************************************************************
-//*********** SETUP ***************************************************************************
-//*********************************************************************************************
+/*
+ *  Setup function - called once
+ */
 void setup() {
   Serial.begin(SERIAL_BAUD);
 
-  //##################################
   Serial.println();
   Serial.println("================================");
   Serial.println("[SETUP] Starting");
   Serial.println("--------------------------------");
 
-  // setup GPIO/LEDS etc
-  init_pins();
-  
   // setup neopixel
   init_neopixels();
   
@@ -484,12 +370,12 @@ void setup() {
   // initialise RFM96
   initRadio();
 
+  Serial.println("[SETUP] Complete");
 }
 
-
-//*********************************************************************************************
-//*********** MAIN LOOP ***************************************************************************
-//*********************************************************************************************
+/*
+ *  Main loop
+ */
 void loop() {
   // call MQTT loop to handle active connection
   if (!client.connected()) {
@@ -509,15 +395,16 @@ void loop() {
       Serial.println();
       cur_width = 0;
     }
-  } // endif
+  }
   
   // handle any serial input
-  if (Serial.available() > 0)
-      handleSerial();
+  if (Serial.available() > 0) {
+    handleSerial();
+  }
  
   // handle any incoming radio frames
-  if (radio.receiveDone())
-      handleRadioReceive();
-      
+  if (radio.receiveDone()) {
+    handleRadioReceive();
+  }
 }
  
