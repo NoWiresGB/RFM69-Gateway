@@ -35,10 +35,6 @@
 // WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
 
-// included here temporarily
-const char* ssid = ""; //your WiFi Name
-const char* password = "";  //Your Wifi Password
-
 #define SERIAL_BAUD 115200
 
 // MQTT settings
@@ -46,7 +42,7 @@ String mqtt_server = "192.168.0.254";
 int mqtt_port = 1883;
 String mqtt_clientId = "";
 String mqtt_topic = "";
-String mqtt_base_topic = "sensors/433reciever";
+String mqtt_base_topic = "RFM69Gw";
 String msg = "";
 
 // add WiFi MAC address to the publish topic
@@ -57,7 +53,7 @@ String msg = "";
 //*********************************************************************************************
 
 #define NODEID      1
-#define NETWORKID   100
+#define NETWORKID   89
 //Match frequency to the hardware version of the radio on your Moteino (uncomment one):
 #define FREQUENCY    RF69_433MHZ // other options are RF69_868MHZ and RF69_915MHZ
 #define ENCRYPTKEY   "sampleEncryptKey" //has to be same 16 characters/bytes on all nodes, not more not less!
@@ -82,7 +78,18 @@ bool promiscuousMode = false;
 #define NUMPIXELS 2
 Adafruit_NeoPixel pixels(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 500 // Time (in milliseconds) to pause between pixels
+// breathing light config
+// which LED we're using for the breathing light
+#define STATUS_NEOPX_POSITION     0
+
+// breathing light state machine
+#define STATUS_NEOPX_OFF          0
+#define STATUS_NEOPX_BRIGHTENING  1
+#define STATUS_NEOPX_DIMMING      2
+
+// timestamp of the last state machine change and initial state
+unsigned long lastStatusChange = 0;
+byte breathingLedStatus = STATUS_NEOPX_OFF;
 
 // how often whilst waiting for input to do HB indicator
 unsigned int HB = 10000;
@@ -142,7 +149,7 @@ void initRadio()
   radio.encrypt(ENCRYPTKEY);
   radio.spyMode(promiscuousMode); 
 
-  Serial.print("[RFM96] initialised, listening @");
+  Serial.print("[RFM96] initialised, listening @ ");
   char buff[10];
   sprintf(buff, "%d Mhz", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
   Serial.println(buff);
@@ -394,7 +401,7 @@ void loop() {
       cur_width = 0;
     }
   }
-  
+ 
   // handle any serial input
   if (Serial.available() > 0) {
     handleSerial();
@@ -403,5 +410,61 @@ void loop() {
   // handle any incoming radio frames
   if (radio.receiveDone()) {
     handleRadioReceive();
+  }
+
+  // breathing light
+  // work around the 50 day rollover
+  if (millis() < lastStatusChange) {
+    lastStatusChange = 0;
+  }
+  switch (breathingLedStatus) {
+    case STATUS_NEOPX_OFF:
+      // led is off for 5 seconds
+      if (millis() - lastStatusChange > 5000) {
+        // move to the next status
+        breathingLedStatus = STATUS_NEOPX_BRIGHTENING;
+        lastStatusChange = millis();
+      }
+      break;
+    case STATUS_NEOPX_BRIGHTENING:
+      // we go from 0 to 16 brightness over 1 second
+      if (millis() - lastStatusChange > 1000) {
+        // move to next status
+        breathingLedStatus = STATUS_NEOPX_DIMMING;
+        lastStatusChange = millis();
+      } else {
+        // see if we need to update the colour
+        uint32_t c = pixels.getPixelColor(STATUS_NEOPX_POSITION);
+        byte green = (byte)(c >> 8);
+        byte newGreen = (millis() - lastStatusChange) / 62;
+        
+        if (green != newGreen) {
+          pixels.setPixelColor(STATUS_NEOPX_POSITION, pixels.Color(0, newGreen, 0));
+          pixels.show();
+        }
+      }
+      break;
+    case STATUS_NEOPX_DIMMING:
+      // we go from 16 to 0 brightness over 1 second
+      if (millis() - lastStatusChange > 1000) {
+        // move to next status
+        breathingLedStatus = STATUS_NEOPX_OFF;
+        lastStatusChange = millis();
+
+        // just for good measure
+        pixels.setPixelColor(STATUS_NEOPX_POSITION, 0);
+        pixels.show();
+      } else {
+        // see if we need to update the colour
+        uint32_t c = pixels.getPixelColor(STATUS_NEOPX_POSITION);
+        byte green = (byte)(c >> 8);
+        byte newGreen = 16 - ((millis() - lastStatusChange) / 62);
+
+        if (green != newGreen) {
+          pixels.setPixelColor(STATUS_NEOPX_POSITION, pixels.Color(0, newGreen, 0));
+          pixels.show();
+        }
+      }
+      break;
   }
 }
