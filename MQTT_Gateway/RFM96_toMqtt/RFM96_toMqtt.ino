@@ -49,6 +49,9 @@ String mqtt_topic = "";
 String mqtt_base_topic = "sensors/433reciever";
 String msg = "";
 
+// add WiFi MAC address to the publish topic
+#define ADD_MAC_TO_MQTT_TOPIC
+
 //*********************************************************************************************
 // RFM69 stuff
 //*********************************************************************************************
@@ -203,7 +206,11 @@ void init_mqtt() {
 
   // can only setup clientID and topic once WiFi is up
   mqtt_clientId = WiFi.macAddress();
-  mqtt_topic = mqtt_base_topic + "/" + mqtt_clientId + "/";
+  #ifdef ADD_MAC_TO_MQTT_TOPIC
+    mqtt_topic = mqtt_base_topic + "/" + mqtt_clientId + "/";
+  #else
+    mqtt_topic = mqtt_base_topic + "/";
+  #endif
   
   // mqtt setup (setup unqiue client id from mac
   Serial.println("[MQTT ] initiliasing");
