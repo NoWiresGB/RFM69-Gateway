@@ -105,11 +105,9 @@ long unsigned int last_check_millis = 0;
 int cur_width = 0;
 
 // rfm96 receiver struct
-typedef struct __attribute__((__packed__))  { // turn off padding to allow struct casting on incoming data
-  short int      nodeId; //store this nodeId needs to be short int to support atmega328p
-  unsigned long uptime; //uptime in ms
-  float         temp;   //temperature maybe?
-} Payload;
+typedef struct {
+  uint16_t      nodeId;
+} __attribute__((__packed__)) Payload;
 Payload theData;
 
 
@@ -297,6 +295,16 @@ void handleSerial() {
 }
 
 /*
+ *  Helper function for creating hex strings
+ */
+char hexDigit(byte v)
+{
+  v &= 0x0F; // just the lower 4 bits
+
+  return v < 10 ? '0' + v : 'A' + (v - 10);
+}
+
+/*
  *  Process data received over radio
  */
 void handleRadioReceive() {
@@ -309,35 +317,34 @@ void handleRadioReceive() {
   }
   Serial.println();
 
+  // max data length is 61, so we allocate 2x61 + 1 for string termination
+  char  hexData[123];
+  byte  ptr = 0;
+  for (byte i = 0; i < radio.DATALEN; i++){
+    hexData[ptr++] = hexDigit(radio.DATA[i] >> 4);
+    hexData[ptr++] = hexDigit(radio.DATA[i]);
+  }
+  hexData[ptr] = '\0';
+  String hexPayload = String(hexData);
+
   // output raw data payload
-  Serial.print(" > Data received [");
+  Serial.print("[RFM96]  > Data received [");
   Serial.print(radio.DATALEN);
   Serial.print("b]: [");
-  for (byte i = 0; i < radio.DATALEN; i++){
-    Serial.print((char)radio.DATA[i],HEX);
+
+  for(byte i = 0; i < hexPayload.length(); i += 2) {
+    Serial.print(hexPayload.substring(i, i + 2));
     Serial.print(" ");
   }
   Serial.println("]");
 
-  // check node id (understand expected incoming data structure)
-  
-  //theData = *(Payload*)radio.DATA; //assume radio.DATA actually contains our struct and not something else
   // temporary char* to work around strict aliasing
   char *tPtr = (char*)radio.DATA;
   theData = *(Payload*)tPtr;
-  Serial.print(" > vars: nodeId=");
-  Serial.print(theData.nodeId);
-  Serial.print(" uptime=");
-  Serial.print(theData.uptime);
-  Serial.print(" temp=");
-  Serial.print(theData.temp);
-  Serial.println();
 
   // push data to mqtt
   Serial.print(" > Pushing data to MQTT: ");
-  client.publish(String(mqtt_topic + theData.nodeId + "/trigger").c_str(), "");
-  client.publish(String(mqtt_topic + theData.nodeId + "/uptime" ).c_str(), String(theData.uptime).c_str() );
-  client.publish(String(mqtt_topic + theData.nodeId + "/temp" ).c_str(), String(theData.temp).c_str()  );
+  client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str() );
   Serial.println("done");
 
   // send back ack if requested (do this ASAP - before other processing)
@@ -348,8 +355,6 @@ void handleRadioReceive() {
     radio.sendACK();
     Serial.println("sent.");
   }
-
-  Serial.println();
 }
 
 /*
