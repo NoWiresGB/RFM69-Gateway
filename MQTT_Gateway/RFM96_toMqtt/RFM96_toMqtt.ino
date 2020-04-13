@@ -47,6 +47,8 @@ String msg = "";
 
 // add WiFi MAC address to the publish topic
 #define ADD_MAC_TO_MQTT_TOPIC
+// push RSSI to MQTT (will move to configurable option later)
+#define PUSH_RSSI_TO_MQTT
 
 //*********************************************************************************************
 // RFM69 stuff
@@ -91,9 +93,18 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 unsigned long lastStatusChange = 0;
 byte breathingLedStatus = STATUS_NEOPX_OFF;
 
+// which LED we're using for radio status
+#define RADIO_STATUS_NEOPX_POSITION 1
+#define RADIO_STATUS_NEOPX_ONTIME   50
+
+#define STATUS_RADIO_NEOPX_OFF  0
+#define STATUS_RADIO_NEOPX_ON   1
+
+unsigned long radioStatusOnTime = 0;
+byte radioLedStatus = STATUS_RADIO_NEOPX_OFF;
+
 // how often whilst waiting for input to do HB indicator
 unsigned int HB = 10000;
-int micro_sleep = 50;
 
 // number of chars on output for HB indicator line wrap
 int max_width = 40;
@@ -104,16 +115,12 @@ long unsigned int last_check_millis = 0;
 // pretty serial output
 int cur_width = 0;
 
-// rfm96 receiver struct
+// RFM96 receiver struct
+// this does not contain the actual payload; only the node ID
 typedef struct {
   uint16_t      nodeId;
 } __attribute__((__packed__)) Payload;
 Payload theData;
-
-
-//*********************************************************************************************
-// Global objects
-//*********************************************************************************************
 
 // esp wifi object
 WiFiClient espClient;
@@ -160,7 +167,7 @@ void init_neopixels(){
     Serial.println("[NEOPX] Setting up NeoPixels");
     
     pixels.begin();
-    pixels.clear(); 
+    pixels.clear();
     pixels.show();
 
     Serial.println("[NEOPX] NeoPixel init complete");
@@ -308,6 +315,13 @@ char hexDigit(byte v)
  *  Process data received over radio
  */
 void handleRadioReceive() {
+  // light up the radio status LED
+  pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(16, 8, 0));
+  pixels.show();
+
+  radioStatusOnTime = millis();
+  radioLedStatus = STATUS_RADIO_NEOPX_ON;
+
   // output info on received radio data
   Serial.println();
   Serial.print("[RFM96] RCVD [Node:");Serial.print(radio.SENDERID, DEC);
@@ -344,7 +358,10 @@ void handleRadioReceive() {
 
   // push data to mqtt
   Serial.print(" > Pushing data to MQTT: ");
-  client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str() );
+  client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
+  #ifdef PUSH_RSSI_TO_MQTT
+    client.publish(String(mqtt_topic + theData.nodeId + "/rssi" ).c_str(), String(radio.readRSSI()).c_str());
+  #endif
   Serial.println("done");
 
   // send back ack if requested (do this ASAP - before other processing)
@@ -471,5 +488,19 @@ void loop() {
         }
       }
       break;
+  }
+
+  // radio status light
+  // work around the 50 day rollover
+  if (millis() < radioStatusOnTime) {
+    radioStatusOnTime = 0;
+  }
+  if (radioLedStatus == STATUS_RADIO_NEOPX_ON) {
+    if (millis() - radioStatusOnTime > RADIO_STATUS_NEOPX_ONTIME) {
+      // the status LED is only on for 50msec
+      radioLedStatus = STATUS_RADIO_NEOPX_OFF;
+      pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(0, 0, 0));
+      pixels.show();
+    }
   }
 }
