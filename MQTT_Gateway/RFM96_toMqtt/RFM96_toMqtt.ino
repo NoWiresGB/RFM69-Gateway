@@ -375,6 +375,17 @@ void handleRadioReceive() {
 }
 
 /*
+ *  Register on mDNS
+ */
+void initmDNS() {
+  // set up mDNS
+  if (!MDNS.begin("rfm69-gw")) {
+    Serial.println("[MDNS ] Error setting up mDNS responder!");
+  }
+  Serial.println("[MDNS ] Responder started - hostname emonD1.local");
+}
+
+/*
  *  Setup function - called once
  */
 void setup() {
@@ -395,6 +406,9 @@ void setup() {
 
   // initialise RFM96
   initRadio();
+
+  // register on mDNS
+  initmDNS();
 
   Serial.println("[SETUP] Complete");
   Serial.println("--------------------------------");
