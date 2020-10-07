@@ -383,6 +383,9 @@ void initmDNS() {
     Serial.println("[MDNS ] Error setting up mDNS responder!");
   }
   Serial.println("[MDNS ] Responder started - hostname rfm69gw.local");
+
+  // Add service to MDNS-SD
+  MDNS.addService("http", "tcp", 80);
 }
 
 /*
