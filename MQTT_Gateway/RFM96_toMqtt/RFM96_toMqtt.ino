@@ -189,15 +189,15 @@ void init_wifi() {
   Serial.print("[WIFI ] IP address: ");
   Serial.println(WiFi.localIP());
 
-  Serial.println("[WIFI] Setup complete");
+  Serial.println("[WIFI ] Setup complete");
 }
 
 /*
  *  Connect to MQTT server
  */
 void init_mqtt() {
-  // mDNS to discover MQTT server
-  if (!MDNS.begin("ESP")) {
+/*  // mDNS to discover MQTT server
+  if (!MDNS.begin("RFM69Gw")) {
     Serial.println("[mDNS ] Error setting up mDNS");
   } else {
     Serial.println("[mDNS ] Setup - Sending Query");
@@ -215,7 +215,7 @@ void init_mqtt() {
       Serial.println(mqtt_port);
     }
   }
-
+*/
   // can only setup clientID and topic once WiFi is up
   mqtt_clientId = WiFi.macAddress();
   #ifdef ADD_MAC_TO_MQTT_TOPIC
@@ -375,6 +375,20 @@ void handleRadioReceive() {
 }
 
 /*
+ *  Register on mDNS
+ */
+void initmDNS() {
+  // set up mDNS
+  if (!MDNS.begin("rfm69gw")) {
+    Serial.println("[MDNS ] Error setting up mDNS responder!");
+  }
+  Serial.println("[MDNS ] Responder started - hostname rfm69gw.local");
+
+  // Add service to MDNS-SD
+  MDNS.addService("http", "tcp", 80);
+}
+
+/*
  *  Setup function - called once
  */
 void setup() {
@@ -390,11 +404,14 @@ void setup() {
   // setup WIFI
   init_wifi();
 
-  // mDNS MQTT setup
+  // MQTT setup
   init_mqtt();
 
   // initialise RFM96
   initRadio();
+
+  // register on mDNS
+  initmDNS();
 
   Serial.println("[SETUP] Complete");
   Serial.println("--------------------------------");
