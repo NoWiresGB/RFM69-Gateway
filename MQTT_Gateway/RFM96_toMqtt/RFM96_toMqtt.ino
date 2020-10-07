@@ -126,6 +126,8 @@ Payload theData;
 WiFiClient espClient;
 // MQTT client object
 PubSubClient client(espClient);
+// HTTP server
+ESP8266WebServer httpServer(80);
 
 /*
  *  Helper LED blink function
@@ -134,6 +136,33 @@ void ledBlink(int pin, int duration_ms) {
   digitalWrite(pin, LOW);
   delay(duration_ms);
   digitalWrite(pin, HIGH);
+}
+
+/*
+ * Handle request for web root
+ */
+void handleRoot() {
+  // create page
+  String s = "<html>";
+	s += "<head>";
+  s += "<title>emonD1</title>";
+	s += "</head>";
+  s += "<body>";
+  s += "<center>";
+  s += "<h1 style=\"color: #82afcc\">";
+  s += "rfm69gw";
+  s += ".local</h1><h3>RFM69 to MQTT bridge</h3>";
+  s += "</center>";
+
+  s += "<p>Uptime:";
+  s += millis();
+  s += "</p>";
+
+  s += "</body>";
+  s += "</html>";
+
+  // sent html response
+  httpServer.send(200, "text/html", s);
 }
 
 /*
@@ -389,6 +418,18 @@ void initmDNS() {
 }
 
 /*
+ *  Register on mDNS
+ */
+void initWebServer() {
+  // Start HTTP server
+  httpServer.begin();
+  Serial.println("[HTTP ] Webserver started");
+
+  // add page(s) to HTTP server
+  httpServer.on("/", handleRoot);
+}
+
+/*
  *  Setup function - called once
  */
 void setup() {
@@ -413,6 +454,9 @@ void setup() {
   // register on mDNS
   initmDNS();
 
+  // start the webserver
+  initWebServer();
+
   Serial.println("[SETUP] Complete");
   Serial.println("--------------------------------");
 }
@@ -421,11 +465,17 @@ void setup() {
  *  Main loop
  */
 void loop() {
+  // run mDNS update
+  MDNS.update();
+
   // call MQTT loop to handle active connection
   if (!client.connected()) {
     mqtt_reconnect();
   }
   client.loop();
+
+  // process web stuff
+  httpServer.handleClient();
 
   // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
   if ( millis() - last_check_millis > HB ) {
