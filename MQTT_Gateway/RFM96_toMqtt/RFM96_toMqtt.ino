@@ -35,6 +35,10 @@
 // WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
 
+// Uptime library
+#include <uptime.h>
+#include <uptime_formatter.h>
+
 #define SERIAL_BAUD 115200
 
 // MQTT settings
@@ -139,6 +143,17 @@ void ledBlink(int pin, int duration_ms) {
 }
 
 /*
+ *  Helper to zero pad numbers
+ */
+String padDigits(int digits) {
+  if(digits < 10) {
+    return "0" + String(digits);
+  }
+  return String(digits);
+}
+
+
+/*
  * Handle request for web root
  */
 void handleRoot() {
@@ -154,8 +169,8 @@ void handleRoot() {
   s += ".local</h1><h3>RFM69 to MQTT bridge</h3>";
   s += "</center>";
 
-  s += "<p>Uptime:";
-  s += millis();
+  s += "<p>Uptime: ";
+  s += uptime_formatter::getUptime();
   s += "</p>";
 
   s += "</body>";
