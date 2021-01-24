@@ -49,6 +49,19 @@ String mqtt_topic = "";
 String mqtt_base_topic = "RFM69Gw";
 String msg = "";
 
+// store the last 5 radio packets
+typedef struct {
+  bool valid;
+  uint16_t senderId;
+  uint8_t dataLen;
+  uint8_t data[RF69_MAX_DATA_LEN+1];
+  uint8_t ackReq;
+  int16_t rssi;
+} __attribute__((packed)) RadioPacket;
+
+RadioPacket recvPackets[5];
+uint8_t lastPacket = -1;
+
 // add WiFi MAC address to the publish topic
 #define ADD_MAC_TO_MQTT_TOPIC
 // push RSSI to MQTT (will move to configurable option later)
@@ -133,6 +146,7 @@ PubSubClient client(espClient);
 // HTTP server
 ESP8266WebServer httpServer(80);
 
+
 /*
  *  Helper LED blink function
  */
@@ -141,6 +155,7 @@ void ledBlink(int pin, int duration_ms) {
   delay(duration_ms);
   digitalWrite(pin, HIGH);
 }
+
 
 /*
  *  Helper to zero pad numbers
@@ -154,6 +169,17 @@ String padDigits(int digits) {
 
 
 /*
+ *  Helper function for creating hex strings
+ */
+char hexDigit(byte v)
+{
+  v &= 0x0F; // just the lower 4 bits
+
+  return v < 10 ? '0' + v : 'A' + (v - 10);
+}
+
+
+/*
  * Handle request for web root
  */
 void handleRoot() {
@@ -161,6 +187,7 @@ void handleRoot() {
   String s = "<html>";
 	s += "<head>";
   s += "<title>emonD1</title>";
+  s += "<style>table, th, td {border: 1px solid black;}</style>";
 	s += "</head>";
   s += "<body>";
   s += "<center>";
@@ -172,6 +199,59 @@ void handleRoot() {
   s += "<p>Uptime: ";
   s += uptime_formatter::getUptime();
   s += "</p>";
+
+  s += "<p>Last 5 packets: ";
+  s += "<table style=\"width:100%\">";
+  s += "<tr><th>Sender</th><th>Data len</th><th>Data</th><th>AckReq</th><th>RSSI</th></tr>";
+
+  // max data length is 61, so we allocate 2x61 + 1 for string termination
+  char  hexData[123];
+
+  int8_t c = lastPacket;
+  for(uint8_t i = 0; i < 5; i++)
+  {
+    if (recvPackets[c].valid)
+    {
+      s += "<tr>";
+
+      s += "<td>";
+      s += recvPackets[c].senderId;
+      s += "</td>";
+
+      s += "<td>";
+      s += recvPackets[c].dataLen;
+      s += "</td>";
+
+      s += "<td>";
+      uint8_t  ptr = 0;
+      for (uint8_t i = 0; i < recvPackets[c].dataLen; i++){
+        hexData[ptr++] = hexDigit(recvPackets[c].data[i] >> 4);
+        hexData[ptr++] = hexDigit(recvPackets[c].data[i]);
+      }
+      hexData[ptr] = '\0';
+      s += String(hexData);
+      s += "</td>";
+
+      s += "<td>";
+      s += recvPackets[c].ackReq ? "yes" : "no";
+      s += "</td>";
+
+      s += "<td>";
+      s += recvPackets[c].rssi;
+      s += "</td>";
+
+      s += "</tr>";
+    }
+
+    // move on to the previous packet
+    c--;
+    if (c < 0)
+    {
+      c = 4;
+    }
+  }
+
+  s += "</table>";
 
   s += "</body>";
   s += "</html>";
@@ -345,15 +425,6 @@ void handleSerial() {
   }
 }
 
-/*
- *  Helper function for creating hex strings
- */
-char hexDigit(byte v)
-{
-  v &= 0x0F; // just the lower 4 bits
-
-  return v < 10 ? '0' + v : 'A' + (v - 10);
-}
 
 /*
  *  Process data received over radio
@@ -408,6 +479,20 @@ void handleRadioReceive() {
   #endif
   Serial.println("done");
 
+  // save the received radio packet into our buffer
+  lastPacket++;
+  if (lastPacket > 4)
+  {
+    lastPacket = 0;
+  }
+
+  recvPackets[lastPacket].valid = true;
+  recvPackets[lastPacket].senderId = radio.SENDERID;
+  recvPackets[lastPacket].dataLen = radio.DATALEN;
+  memcpy(recvPackets[lastPacket].data, radio.DATA, sizeof radio.DATA);
+  recvPackets[lastPacket].rssi = radio.RSSI;
+  recvPackets[lastPacket].ackReq = radio.ACK_REQUESTED;
+
   // send back ack if requested (do this ASAP - before other processing)
   if (radio.ACKRequested())
   {
@@ -453,6 +538,12 @@ void setup() {
   Serial.println();
   Serial.println("--------------------------------");
   Serial.println("[SETUP] Starting");
+
+  // init radio packet buffer
+  for(uint8_t i = 0; i < 5; i++)
+  {
+    recvPackets[i].valid = false;
+  }
 
   // setup neopixel
   init_neopixels();
