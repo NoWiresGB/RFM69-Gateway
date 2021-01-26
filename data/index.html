@@ -1,0 +1,29 @@
+<html>
+    <head>
+        <title>%HOSTNAME%</title>
+        <style>
+            table, th, td { border: 1px solid black; }
+            h1 { color: #82afcc; }
+        </style>
+    </head>
+    
+    <body>
+        <center>
+            <h1>%HOSTNAME%</h1>
+            <h3>RFM69 to MQTT bridge</h3>
+        </center>
+        <p>Uptime: %UPTIME%</p>
+        <p>Last 5 packets: 
+            <table style="width:100%%">
+                <tr>
+                    <th>Sender</th>
+                    <th>Data len</th>
+                    <th>Data</th>
+                    <th>AckReq</th>
+                    <th>RSSI</th>
+                </tr>
+                %RECVPACKETS%
+            </table>
+        </p>
+    </body>
+</html>
