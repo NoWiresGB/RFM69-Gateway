@@ -26,14 +26,30 @@
 #include <RFM69_ATC.h>     //get it here: https://www.github.com/lowpowerlab/rfm69
 #include <SPI.h>           //included with Arduino IDE install (www.arduino.cc)
 
+// work around SPIFFS deprecation
+// redefine it to be LitteFS
+#include <FS.h>
+#define SPIFFS LittleFS
+#include <LittleFS.h> 
+
 // ESPwifi / mDNS / MQTT libs
 #include <ESP8266WiFi.h>    // included with ESP8266 board def install
 #include <ESP8266mDNS.h>    // included with ESP8266 board def install
 #include <PubSubClient.h>   // get it here : https://github.com/knolleary/pubsubclient
-#include <WiFiManager.h>
+//#include <WiFiManager.h>
+// web server
+#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <ESPAsyncWiFiManager.h>
+
+String hostName = "rfm69gw";
 
 // WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
+
+// Uptime library
+#include <uptime.h>
+#include <uptime_formatter.h>
 
 #define SERIAL_BAUD 115200
 
@@ -44,6 +60,20 @@ String mqtt_clientId = "";
 String mqtt_topic = "";
 String mqtt_base_topic = "RFM69Gw";
 String msg = "";
+
+// store the last 5 radio packets
+typedef struct {
+  bool valid;
+  uint16_t senderId;
+  uint8_t dataLen;
+  uint8_t data[RF69_MAX_DATA_LEN+1];
+  uint8_t ackReq;
+  int16_t rssi;
+} __attribute__((packed)) RadioPacket;
+
+// use a ring-buffer for radio packet storage
+RadioPacket recvPackets[5];
+uint8_t lastPacket = -1;
 
 // add WiFi MAC address to the publish topic
 #define ADD_MAC_TO_MQTT_TOPIC
@@ -127,7 +157,10 @@ WiFiClient espClient;
 // MQTT client object
 PubSubClient client(espClient);
 // HTTP server
-ESP8266WebServer httpServer(80);
+//ESP8266WebServer httpServer(80);
+
+AsyncWebServer server(80);
+DNSServer dns;
 
 /*
  *  Helper LED blink function
@@ -139,37 +172,29 @@ void ledBlink(int pin, int duration_ms) {
 }
 
 /*
- * Handle request for web root
+ *  Helper to zero pad numbers
  */
-void handleRoot() {
-  // create page
-  String s = "<html>";
-	s += "<head>";
-  s += "<title>emonD1</title>";
-	s += "</head>";
-  s += "<body>";
-  s += "<center>";
-  s += "<h1 style=\"color: #82afcc\">";
-  s += "rfm69gw";
-  s += ".local</h1><h3>RFM69 to MQTT bridge</h3>";
-  s += "</center>";
+String padDigits(int digits) {
+  if(digits < 10) {
+    return "0" + String(digits);
+  }
+  return String(digits);
+}
 
-  s += "<p>Uptime:";
-  s += millis();
-  s += "</p>";
+/*
+ *  Helper function for creating hex strings
+ */
+char hexDigit(byte v)
+{
+  v &= 0x0F; // just the lower 4 bits
 
-  s += "</body>";
-  s += "</html>";
-
-  // sent html response
-  httpServer.send(200, "text/html", s);
+  return v < 10 ? '0' + v : 'A' + (v - 10);
 }
 
 /*
  *  Initialise RFM69 module
  */
-void initRadio()
-{
+void initRadio() {
   Serial.println("[RFM96] initialising");
   
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
@@ -189,10 +214,11 @@ void initRadio()
   Serial.println(buff);
 }
 
+
 /*
  *  Initialise the onboard NeoPixels
  */
-void init_neopixels(){
+void init_neopixels() {
     Serial.println("[NEOPX] Setting up NeoPixels");
     
     pixels.begin();
@@ -202,6 +228,7 @@ void init_neopixels(){
     Serial.println("[NEOPX] NeoPixel init complete");
 }
 
+
 /*
  *  Initialise WiFi (via WifiManager)
  */
@@ -209,7 +236,7 @@ void init_wifi() {
   Serial.println("[WIFI ] Setup begin");
 
   // start WiFi auto configuration
-  WiFiManager wifiManager;
+  AsyncWiFiManager wifiManager(&server, &dns);;
   wifiManager.autoConnect("RFM69-Gw_AutoConfig");
 
   // dump some info to serial once we're connected
@@ -220,6 +247,7 @@ void init_wifi() {
 
   Serial.println("[WIFI ] Setup complete");
 }
+
 
 /*
  *  Connect to MQTT server
@@ -263,6 +291,7 @@ void init_mqtt() {
   client.setCallback(mqtt_callback);
 }
 
+
 /*
  *  Handle data received over MQTT
  */
@@ -275,6 +304,7 @@ void mqtt_callback(char* topic, byte * payload, unsigned int length) {
   }
   Serial.println();
 }
+
 
 /*
  *  Reconnect to MQTT server
@@ -301,6 +331,7 @@ void mqtt_reconnect() {
   }
 }
 
+
 /*
  *  Handle serial input
  */
@@ -316,29 +347,23 @@ void handleSerial() {
   Serial.println("]");
 
   // handle input command
-  if (input == 'r') //d=dump all register values
+  if (input == 'r') {
+    // dump all registers
     radio.readAllRegs();
-  if (input == 'E') //E=enable encryption
+  } else if (input == 'E') {
+    //E=enable encryption
     radio.encrypt(ENCRYPTKEY);
-  if (input == 'e') //e=disable encryption
+  } else if (input == 'e') {
+    //e=disable encryption
     radio.encrypt(null);
-  if (input == 'p')
-  {
+  } else if (input == 'p') {
     promiscuousMode = !promiscuousMode;
     radio.spyMode(promiscuousMode);
-    Serial.print("Promiscuous mode ");Serial.println(promiscuousMode ? "on" : "off");
+    Serial.print("Promiscuous mode ");
+    Serial.println(promiscuousMode ? "on" : "off");
   }
 }
 
-/*
- *  Helper function for creating hex strings
- */
-char hexDigit(byte v)
-{
-  v &= 0x0F; // just the lower 4 bits
-
-  return v < 10 ? '0' + v : 'A' + (v - 10);
-}
 
 /*
  *  Process data received over radio
@@ -363,7 +388,7 @@ void handleRadioReceive() {
   // max data length is 61, so we allocate 2x61 + 1 for string termination
   char  hexData[123];
   byte  ptr = 0;
-  for (byte i = 0; i < radio.DATALEN; i++){
+  for (byte i = 0; i < radio.DATALEN; i++) {
     hexData[ptr++] = hexDigit(radio.DATA[i] >> 4);
     hexData[ptr++] = hexDigit(radio.DATA[i]);
   }
@@ -393,9 +418,21 @@ void handleRadioReceive() {
   #endif
   Serial.println("done");
 
+  // save the received radio packet into our buffer
+  lastPacket++;
+  if (lastPacket > 4) {
+    lastPacket = 0;
+  }
+
+  recvPackets[lastPacket].valid = true;
+  recvPackets[lastPacket].senderId = radio.SENDERID;
+  recvPackets[lastPacket].dataLen = radio.DATALEN;
+  memcpy(recvPackets[lastPacket].data, radio.DATA, sizeof radio.DATA);
+  recvPackets[lastPacket].rssi = radio.RSSI;
+  recvPackets[lastPacket].ackReq = radio.ACK_REQUESTED;
+
   // send back ack if requested (do this ASAP - before other processing)
-  if (radio.ACKRequested())
-  {
+  if (radio.ACKRequested()) {
     // send back ack 
     Serial.print(" > Ack requested, sending: ");
     radio.sendACK();
@@ -403,31 +440,104 @@ void handleRadioReceive() {
   }
 }
 
+
 /*
  *  Register on mDNS
  */
 void initmDNS() {
   // set up mDNS
-  if (!MDNS.begin("rfm69gw")) {
+  if (!MDNS.begin(hostName)) {
     Serial.println("[MDNS ] Error setting up mDNS responder!");
   }
-  Serial.println("[MDNS ] Responder started - hostname rfm69gw.local");
+  Serial.print("[MDNS ] Responder started - hostname ");
+  Serial.print(hostName);
+  Serial.println(".local");
 
   // Add service to MDNS-SD
   MDNS.addService("http", "tcp", 80);
 }
 
+
+/*
+ *  Web page processor
+ */
+String processor(const String& var) {
+  if(var == "HOSTNAME") {
+    return hostName + ".local";
+  }
+  else if (var == "UPTIME") {
+    return uptime_formatter::getUptime();
+  }
+  else if (var == "RECVPACKETS") {
+    String s = "";
+    // max data length is 61, so we allocate 2x61 + 1 for string termination
+    char  hexData[123];
+
+    int8_t c = lastPacket;
+    for(uint8_t i = 0; i < 5; i++) {
+      if (recvPackets[c].valid) {
+        s += "<tr>";
+
+        s += "<td>";
+        s += recvPackets[c].senderId;
+        s += "</td>";
+
+        s += "<td>";
+        s += recvPackets[c].dataLen;
+        s += "</td>";
+
+        s += "<td>";
+        uint8_t  ptr = 0;
+        for (uint8_t i = 0; i < recvPackets[c].dataLen; i++) {
+          hexData[ptr++] = hexDigit(recvPackets[c].data[i] >> 4);
+          hexData[ptr++] = hexDigit(recvPackets[c].data[i]);
+        }
+        hexData[ptr] = '\0';
+        s += String(hexData);
+        s += "</td>";
+
+        s += "<td>";
+        s += recvPackets[c].ackReq ? "yes" : "no";
+        s += "</td>";
+
+        s += "<td>";
+        s += recvPackets[c].rssi;
+        s += "</td>";
+
+        s += "</tr>";
+      }
+
+      // move on to the previous packet
+      c--;
+      if (c < 0) {
+        c = 4;
+      }
+    }
+
+    return s;
+  }
+
+  // catch all
+  // this normally means a '%%' token
+  return "%";
+}
+
+
 /*
  *  Register on mDNS
  */
 void initWebServer() {
-  // Start HTTP server
-  httpServer.begin();
   Serial.println("[HTTP ] Webserver started");
 
-  // add page(s) to HTTP server
-  httpServer.on("/", handleRoot);
+  // route for root page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/index.html", String(), false, processor);
+  });
+
+  // Start HTTP server
+  server.begin();
 }
+
 
 /*
  *  Setup function - called once
@@ -438,6 +548,14 @@ void setup() {
   Serial.println();
   Serial.println("--------------------------------");
   Serial.println("[SETUP] Starting");
+
+  // init radio packet buffer
+  for(uint8_t i = 0; i < 5; i++) {
+    recvPackets[i].valid = false;
+  }
+
+  // open the filesystem
+  SPIFFS.begin();
 
   // setup neopixel
   init_neopixels();
@@ -461,6 +579,7 @@ void setup() {
   Serial.println("--------------------------------");
 }
 
+
 /*
  *  Main loop
  */
@@ -475,7 +594,7 @@ void loop() {
   client.loop();
 
   // process web stuff
-  httpServer.handleClient();
+//  httpServer.handleClient();
 
   // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
   if ( millis() - last_check_millis > HB ) {
