@@ -42,7 +42,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncWiFiManager.h>
 
-String hostName = "rfm69gw-test";
+String hostName = "rfm69gw";
 
 // WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
