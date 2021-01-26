@@ -42,6 +42,9 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncWiFiManager.h>
 
+// OTA update
+#include <ArduinoOTA.h>
+
 String hostName = "rfm69gw";
 
 // WS2812 LEDs
@@ -162,6 +165,7 @@ PubSubClient client(espClient);
 AsyncWebServer server(80);
 DNSServer dns;
 
+
 /*
  *  Helper LED blink function
  */
@@ -170,6 +174,7 @@ void ledBlink(int pin, int duration_ms) {
   delay(duration_ms);
   digitalWrite(pin, HIGH);
 }
+
 
 /*
  *  Helper to zero pad numbers
@@ -181,6 +186,7 @@ String padDigits(int digits) {
   return String(digits);
 }
 
+
 /*
  *  Helper function for creating hex strings
  */
@@ -189,6 +195,56 @@ char hexDigit(byte v)
   v &= 0x0F; // just the lower 4 bits
 
   return v < 10 ? '0' + v : 'A' + (v - 10);
+}
+
+void init_OTA() {
+  Serial.println("[OTA  ] Setting up OTA");
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "program";
+    } else { // U_FS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    SPIFFS.end();
+    Serial.println("[OTA  ] Start updating " + type);
+  });
+
+  ArduinoOTA.onEnd([]() {
+    Serial.println("[OTA  ] Update finished");
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    char buf[32];
+    sprintf(buf, "[OTA  ] Progress: %u%%\r", (progress / (total / 100)));
+    Serial.println(buf);
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    char buf[16];
+    sprintf(buf, "[OTA  ] Error[%u]: ", error);
+    Serial.println(buf);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+
+  // start OTA receiver
+  ArduinoOTA.setHostname(hostName.c_str());
+  ArduinoOTA.begin();
+
+  Serial.println("[OTA  ] OTA setup complete");
 }
 
 /*
@@ -563,6 +619,9 @@ void setup() {
   // setup WIFI
   init_wifi();
 
+  // setup OTA
+  init_OTA();
+
   // MQTT setup
   init_mqtt();
 
@@ -570,7 +629,7 @@ void setup() {
   initRadio();
 
   // register on mDNS
-  initmDNS();
+  //initmDNS();
 
   // start the webserver
   initWebServer();
@@ -593,8 +652,8 @@ void loop() {
   }
   client.loop();
 
-  // process web stuff
-//  httpServer.handleClient();
+  // handle OTA stuff
+  ArduinoOTA.handle();
 
   // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
   if ( millis() - last_check_millis > HB ) {
