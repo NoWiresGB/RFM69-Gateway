@@ -44,7 +44,6 @@
 
 // OTA update
 #include <ArduinoOTA.h>
-
 String hostName = "rfm69gw";
 
 // WS2812 LEDs
@@ -240,9 +239,9 @@ void init_OTA() {
     }
   });
 
-  // start OTA receiver
+  // start OTA receiver with mDNS
   ArduinoOTA.setHostname(hostName.c_str());
-  ArduinoOTA.begin();
+  ArduinoOTA.begin(true);
 
   Serial.println("[OTA  ] OTA setup complete");
 }
@@ -250,7 +249,7 @@ void init_OTA() {
 /*
  *  Initialise RFM69 module
  */
-void initRadio() {
+void init_radio() {
   Serial.println("[RFM96] initialising");
   
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
@@ -500,16 +499,9 @@ void handleRadioReceive() {
 /*
  *  Register on mDNS
  */
-void initmDNS() {
-  // set up mDNS
-  if (!MDNS.begin(hostName)) {
-    Serial.println("[MDNS ] Error setting up mDNS responder!");
-  }
-  Serial.print("[MDNS ] Responder started - hostname ");
-  Serial.print(hostName);
-  Serial.println(".local");
-
-  // Add service to MDNS-SD
+void init_mDNS() {
+  // mDNS already set up by ArduinoOTA
+  // all we need to do is advertise the HTTP server
   MDNS.addService("http", "tcp", 80);
 }
 
@@ -582,8 +574,8 @@ String processor(const String& var) {
 /*
  *  Register on mDNS
  */
-void initWebServer() {
-  Serial.println("[HTTP ] Webserver started");
+void init_webServer() {
+  Serial.println("[HTTP ] Setting up web server");
 
   // route for root page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -592,6 +584,8 @@ void initWebServer() {
 
   // Start HTTP server
   server.begin();
+
+  Serial.println("[HTTP ] Web server started");
 }
 
 
@@ -626,13 +620,13 @@ void setup() {
   init_mqtt();
 
   // initialise RFM96
-  initRadio();
+  init_radio();
 
   // register on mDNS
-  //initmDNS();
+  init_mDNS();
 
   // start the webserver
-  initWebServer();
+  init_webServer();
 
   Serial.println("[SETUP] Complete");
   Serial.println("--------------------------------");
@@ -643,9 +637,6 @@ void setup() {
  *  Main loop
  */
 void loop() {
-  // run mDNS update
-  MDNS.update();
-
   // call MQTT loop to handle active connection
   if (!client.connected()) {
     mqtt_reconnect();
@@ -653,6 +644,7 @@ void loop() {
   client.loop();
 
   // handle OTA stuff
+  // this updates mDNS as well
   ArduinoOTA.handle();
 
   // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
