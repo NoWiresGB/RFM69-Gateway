@@ -42,6 +42,8 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncWiFiManager.h>
 
+// OTA update
+#include <ArduinoOTA.h>
 String hostName = "rfm69gw";
 
 // WS2812 LEDs
@@ -162,6 +164,7 @@ PubSubClient client(espClient);
 AsyncWebServer server(80);
 DNSServer dns;
 
+
 /*
  *  Helper LED blink function
  */
@@ -170,6 +173,7 @@ void ledBlink(int pin, int duration_ms) {
   delay(duration_ms);
   digitalWrite(pin, HIGH);
 }
+
 
 /*
  *  Helper to zero pad numbers
@@ -181,6 +185,7 @@ String padDigits(int digits) {
   return String(digits);
 }
 
+
 /*
  *  Helper function for creating hex strings
  */
@@ -191,10 +196,60 @@ char hexDigit(byte v)
   return v < 10 ? '0' + v : 'A' + (v - 10);
 }
 
+void init_OTA() {
+  Serial.println("[OTA  ] Setting up OTA");
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "program";
+    } else { // U_FS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    SPIFFS.end();
+    Serial.println("[OTA  ] Start updating " + type);
+  });
+
+  ArduinoOTA.onEnd([]() {
+    Serial.println("[OTA  ] Update finished");
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    char buf[32];
+    sprintf(buf, "[OTA  ] Progress: %u%%\r", (progress / (total / 100)));
+    Serial.println(buf);
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    char buf[16];
+    sprintf(buf, "[OTA  ] Error[%u]: ", error);
+    Serial.println(buf);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+
+  // start OTA receiver with mDNS
+  ArduinoOTA.setHostname(hostName.c_str());
+  ArduinoOTA.begin(true);
+
+  Serial.println("[OTA  ] OTA setup complete");
+}
+
 /*
  *  Initialise RFM69 module
  */
-void initRadio() {
+void init_radio() {
   Serial.println("[RFM96] initialising");
   
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
@@ -444,16 +499,9 @@ void handleRadioReceive() {
 /*
  *  Register on mDNS
  */
-void initmDNS() {
-  // set up mDNS
-  if (!MDNS.begin(hostName)) {
-    Serial.println("[MDNS ] Error setting up mDNS responder!");
-  }
-  Serial.print("[MDNS ] Responder started - hostname ");
-  Serial.print(hostName);
-  Serial.println(".local");
-
-  // Add service to MDNS-SD
+void init_mDNS() {
+  // mDNS already set up by ArduinoOTA
+  // all we need to do is advertise the HTTP server
   MDNS.addService("http", "tcp", 80);
 }
 
@@ -526,8 +574,8 @@ String processor(const String& var) {
 /*
  *  Register on mDNS
  */
-void initWebServer() {
-  Serial.println("[HTTP ] Webserver started");
+void init_webServer() {
+  Serial.println("[HTTP ] Setting up web server");
 
   // route for root page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -536,6 +584,8 @@ void initWebServer() {
 
   // Start HTTP server
   server.begin();
+
+  Serial.println("[HTTP ] Web server started");
 }
 
 
@@ -563,17 +613,20 @@ void setup() {
   // setup WIFI
   init_wifi();
 
+  // setup OTA
+  init_OTA();
+
   // MQTT setup
   init_mqtt();
 
   // initialise RFM96
-  initRadio();
+  init_radio();
 
   // register on mDNS
-  initmDNS();
+  init_mDNS();
 
   // start the webserver
-  initWebServer();
+  init_webServer();
 
   Serial.println("[SETUP] Complete");
   Serial.println("--------------------------------");
@@ -584,17 +637,15 @@ void setup() {
  *  Main loop
  */
 void loop() {
-  // run mDNS update
-  MDNS.update();
-
   // call MQTT loop to handle active connection
   if (!client.connected()) {
     mqtt_reconnect();
   }
   client.loop();
 
-  // process web stuff
-//  httpServer.handleClient();
+  // handle OTA stuff
+  // this updates mDNS as well
+  ArduinoOTA.handle();
 
   // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
   if ( millis() - last_check_millis > HB ) {
