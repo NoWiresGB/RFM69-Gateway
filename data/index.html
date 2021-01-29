@@ -1,10 +1,60 @@
 <html>
     <head>
         <title>%HOSTNAME%</title>
-        <style>
-            table, th, td { border: 1px solid black; }
-            h1 { color: #82afcc; }
-        </style>
+        <link rel="stylesheet" href="style.css">
+        <script>
+            function hexToUInt16(hexNum) {
+                return parseInt(hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
+            }
+
+            function decodeSensorData(hex) {
+                var typeId = hex.substring(0, 4);
+                var retVal;
+
+                if (typeId == "0001") {
+                    retVal = "type: " + typeId + " (power - single channel)<br/>power1: " +
+                    hexToUInt16(hex.substring(4, 8)) + "W<br/>Vrms: " +
+                    hexToUInt16(hex.substring(8, 12)) / 10 + "V";
+                } else if (typeId == "0002") {
+                    retVal = "type: " + typeId + " (power - dual channel)<br/>power1: " +
+                    hexToUInt16(hex.substring(4, 8)) + "W<br/>power2: "+
+                    hexToUInt16(hex.substring(8, 12)) + "W<br/>Vrms: " +
+                    hexToUInt16(hex.substring(12, 16)) / 10 + "V";
+                } else if (typeId == "0003") {
+                    retVal = "type: " + typeId + " (power - quad channel)<br/>power1: " +
+                    hexToUInt16(hex.substring(4, 8)) + "W<br/>power2: "+
+                    hexToUInt16(hex.substring(8, 12)) + "W<br/>power3: " +
+                    hexToUInt16(hex.substring(12, 16)) + "W<br/>power4: " +
+                    hexToUInt16(hex.substring(16, 20)) + "W<br/>Vrms: " +
+                    hexToUInt16(hex.substring(20, 24)) / 10 + "V";
+                } else if (typeId == "0004") {
+                    retVal = "type: " + typeId + " (temp / humidity)<br/>temp: " +
+                    hexToUInt16(hex.substring(4, 8)) / 100 + "C<br/>humidity: " +
+                    hexToUInt16(hex.substring(8, 12)) / 100 + "%<br/>Vbatt: " +
+                    hexToUInt16(hex.substring(12, 16)) + "mV";
+                } else {
+                    retVal = "type: " + typeId + " (unknown)<br/>payload: " + hex.substring(4);
+                }
+
+                return retVal;
+            }
+
+            function tts(x) {
+                var id = "rc" + x;
+                var el = document.getElementById(id);
+                var hexData = el.innerText;
+
+                id = "rtt" + x;
+                el = document.getElementById(id);
+                el.style.display = "block";
+                el.innerHTML = "sender: " + hexData.substring(0, 2) + "<br/>" + decodeSensorData(hexData.substring(2));
+            }
+
+            function tth(x) {
+                var id = "rtt" + x;
+                document.getElementById(id).style.display = "none";
+            }
+        </script>
     </head>
     
     <body>
