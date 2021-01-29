@@ -534,7 +534,13 @@ String processor(const String& var) {
         s += recvPackets[c].dataLen;
         s += "</td>";
 
-        s += "<td>";
+        s += "<td onmouseover=\"tts(";
+        s += i;
+        s += ")\" onmouseout=\"tth(";
+        s += i;
+        s += ")\" class=\"cwc\" id=\"rc";
+        s += i;
+        s += "\">";
         uint8_t  ptr = 0;
         for (uint8_t i = 0; i < recvPackets[c].dataLen; i++) {
           hexData[ptr++] = hexDigit(recvPackets[c].data[i] >> 4);
@@ -542,6 +548,9 @@ String processor(const String& var) {
         }
         hexData[ptr] = '\0';
         s += String(hexData);
+        s += "<span class=\"cc\" id=\"rtt";
+        s += i;
+        s += "\">x</span>";
         s += "</td>";
 
         s += "<td>";
@@ -580,6 +589,11 @@ void init_webServer() {
   // route for root page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(SPIFFS, "/index.html", String(), false, processor);
+  });
+
+  // route for the stylesheet
+  server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/style.css", String(), false, processor);
   });
 
   // Start HTTP server
