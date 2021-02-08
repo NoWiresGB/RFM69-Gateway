@@ -138,6 +138,18 @@ byte breathingLedStatus = STATUS_NEOPX_OFF;
 unsigned long radioStatusOnTime = 0;
 byte radioLedStatus = STATUS_RADIO_NEOPX_OFF;
 
+// colour of the radio activity LED
+uint32_t radioActivityLEDColour = pixels.Color(16, 0, 8);
+
+// colour definitions for the breathing light
+// these are simply bit-shift counters to achieve the correct colour ;)
+#define NEOPIXEL_COLOUR_RED     16
+#define NEOPIXEL_COLOUR_GREEN   8
+#define NEOPIXEL_COLOUR_BLUE    0
+
+// colour of the breathing light LED
+#define STATUS_NEOPX_COLOUR NEOPIXEL_COLOUR_RED
+
 // how often whilst waiting for input to do HB indicator
 unsigned int HB = 10000;
 
@@ -419,7 +431,7 @@ void handleSerial() {
  */
 void handleRadioReceive() {
     // light up the radio status LED
-    pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(16, 8, 0));
+    pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, radioActivityLEDColour);
     pixels.show();
 
     radioStatusOnTime = millis();
@@ -707,11 +719,12 @@ void loop() {
             } else {
                 // see if we need to update the colour
                 uint32_t c = pixels.getPixelColor(STATUS_NEOPX_POSITION);
-                byte green = (byte)(c >> 8);
-                byte newGreen = (millis() - lastStatusChange) / 62;
+                byte curColour = (byte)(c >> STATUS_NEOPX_COLOUR);
+                byte newColour = (millis() - lastStatusChange) / 62;
+                uint32_t colValue = ((uint32_t)newColour << STATUS_NEOPX_COLOUR);
         
-                if (green != newGreen) {
-                    pixels.setPixelColor(STATUS_NEOPX_POSITION, pixels.Color(0, newGreen, 0));
+                if (curColour != newColour) {
+                    pixels.setPixelColor(STATUS_NEOPX_POSITION, colValue);
                     pixels.show();
                 }
             }
@@ -730,11 +743,12 @@ void loop() {
             } else {
                 // see if we need to update the colour
                 uint32_t c = pixels.getPixelColor(STATUS_NEOPX_POSITION);
-                byte green = (byte)(c >> 8);
-                byte newGreen = 16 - ((millis() - lastStatusChange) / 62);
+                byte curColour = (byte)(c >> STATUS_NEOPX_COLOUR);
+                byte newColour = 16 - ((millis() - lastStatusChange) / 62);
+                uint32_t colValue = ((uint32_t)newColour << STATUS_NEOPX_COLOUR);
 
-                if (green != newGreen) {
-                    pixels.setPixelColor(STATUS_NEOPX_POSITION, pixels.Color(0, newGreen, 0));
+                if (curColour != newColour) {
+                    pixels.setPixelColor(STATUS_NEOPX_POSITION, colValue);
                     pixels.show();
                 }
             }
