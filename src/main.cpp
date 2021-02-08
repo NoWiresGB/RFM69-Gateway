@@ -68,6 +68,7 @@ String msg = "";
 // store the last 5 radio packets
 typedef struct {
     bool valid;
+    unsigned long ts;
     uint16_t senderId;
     uint8_t dataLen;
     uint8_t data[RF69_MAX_DATA_LEN+1];
@@ -99,9 +100,9 @@ uint8_t lastPacket = -1;
 #define ENABLE_ATC    // comment out this line to disable AUTO TRANSMISSION CONTROL
 
 #ifdef ENABLE_ATC
-    RFM69_ATC radio(D0, D8);;
+    RFM69_ATC radio(D0, D8);
 #else
-    RFM69 radio(D0, D8);;
+    RFM69 radio(D0, D8);
 #endif
 
 //set to 'true' to sniff all packets on the same network
@@ -166,16 +167,6 @@ DNSServer dns;
 
 
 /*
- *  Helper LED blink function
- */
-void ledBlink(int pin, int duration_ms) {
-    digitalWrite(pin, LOW);
-    delay(duration_ms);
-    digitalWrite(pin, HIGH);
-}
-
-
-/*
  *  Helper to zero pad numbers
  */
 String padDigits(int digits) {
@@ -196,6 +187,10 @@ char hexDigit(byte v)
     return v < 10 ? '0' + v : 'A' + (v - 10);
 }
 
+
+/*
+ *  Initialise OTA
+ */
 void init_OTA() {
     Serial.println("[OTA  ] Setting up OTA");
 
@@ -243,6 +238,7 @@ void init_OTA() {
 
     Serial.println("[OTA  ] OTA setup complete");
 }
+
 
 /*
  *  Initialise RFM69 module
@@ -482,6 +478,7 @@ void handleRadioReceive() {
         lastPacket = 0;
 
     recvPackets[lastPacket].valid = true;
+    recvPackets[lastPacket].ts = millis();
     recvPackets[lastPacket].senderId = radio.SENDERID;
     recvPackets[lastPacket].dataLen = radio.DATALEN;
     memcpy(recvPackets[lastPacket].data, radio.DATA, sizeof radio.DATA);
@@ -521,10 +518,17 @@ String processor(const String& var) {
         // max data length is 61, so we allocate 2x61 + 1 for string termination
         char  hexData[123];
 
+        // get current timestamp
+        unsigned long curTime = millis();
+
         int8_t c = lastPacket;
         for (uint8_t i = 0; i < 5; i++) {
             if (recvPackets[c].valid) {
                 s += "<tr>";
+
+                s += "<td>-";
+                s += ((curTime - recvPackets[c].ts) / 1000);
+                s += " s</td>";
 
                 s += "<td>";
                 s += recvPackets[c].senderId;
@@ -661,7 +665,6 @@ void loop() {
     // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
     if ( millis() - last_check_millis > HB ) {
         Serial.print (".");
-        ledBlink(LED_BUILTIN,50);
         last_check_millis = millis();
 
         // line wrap handler for debug output
