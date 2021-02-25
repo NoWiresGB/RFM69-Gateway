@@ -21,6 +21,10 @@
 // and copyright notices in any redistribution of this code
 // **********************************************************************************
 
+// uncomment this if you're building the gateway for dev purposes
+// this changes the hostname, MQTT base topic and network id
+// #define DEV_BUILD
+
 #include <Arduino.h>
 
 // RFM libs
@@ -46,7 +50,11 @@
 
 // OTA update
 #include <ArduinoOTA.h>
-String hostName = "rfm69gw";
+#ifndef DEVBUILD
+    String hostName = "rfm69gw";
+#else
+    String hostName = "rfm69gw-dev";
+#endif
 
 // WS2812 LEDs
 #include <Adafruit_NeoPixel.h>  // get it here https://github.com/adafruit/Adafruit_NeoPixel
@@ -62,7 +70,11 @@ String mqtt_server = "192.168.0.254";
 int mqtt_port = 1883;
 String mqtt_clientId = "";
 String mqtt_topic = "";
-String mqtt_base_topic = "RFM69Gw";
+#ifndef DEV_BUILD
+    String mqtt_base_topic = "RFM69Gw";
+#else
+    String mqtt_base_topic = "RFM69Gw-dev";
+#endif
 String msg = "";
 
 // store the last 5 radio packets
@@ -90,7 +102,12 @@ uint8_t lastPacket = -1;
 //*********************************************************************************************
 
 #define NODEID      1
-#define NETWORKID   89
+#ifndef DEV_BUILD
+    #define NETWORKID   89
+#else
+    #define NETWORKID   90
+#endif
+
 //Match frequency to the hardware version of the radio on your Moteino (uncomment one):
 #define FREQUENCY    RF69_433MHZ // other options are RF69_868MHZ and RF69_915MHZ
 #define ENCRYPTKEY   "sampleEncryptKey" //has to be same 16 characters/bytes on all nodes, not more not less!
