@@ -21,7 +21,7 @@
 // and copyright notices in any redistribution of this code
 // **********************************************************************************
 
-// uncomment this if you're building the gateway for dev purposes
+// Uncomment this if you're building the gateway for dev purposes
 // this changes the hostname, MQTT base topic and network id
 // #define DEV_BUILD
 
@@ -50,7 +50,7 @@
 
 // OTA update
 #include <ArduinoOTA.h>
-#ifndef DEVBUILD
+#ifndef DEV_BUILD
     String hostName = "rfm69gw";
 #else
     String hostName = "rfm69gw-dev";
