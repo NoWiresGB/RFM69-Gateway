@@ -7,6 +7,10 @@
                 return parseInt(hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
             }
 
+            function hexToUInt32(hexNum) {
+                return parseInt(hexNum.substring(6, 8) + hexNum.substring(4, 6) + hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
+            }
+
             function decodeSensorData(hex) {
                 var typeId = hex.substring(0, 4);
                 var retVal;
@@ -32,6 +36,11 @@
                     hexToUInt16(hex.substring(4, 8)) / 100 + "C<br/>humidity: " +
                     hexToUInt16(hex.substring(8, 12)) / 100 + "%<br/>Vbatt: " +
                     hexToUInt16(hex.substring(12, 16)) + "mV";
+                } else if (typeId == "0005") {
+                    retVal = "type: " + typeId + " (temp / pressure)<br/>temp: " +
+                    hexToUInt16(hex.substring(4, 8)) / 100 + "C<br/>humidity: " +
+                    hexToUInt32(hex.substring(8, 16)) / 100 + "mbar<br/>Vbatt: " +
+                    hexToUInt16(hex.substring(16, 18)) + "mV";
                 } else {
                     retVal = "type: " + typeId + " (unknown)<br/>payload: " + hex.substring(4);
                 }
