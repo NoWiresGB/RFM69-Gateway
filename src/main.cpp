@@ -66,7 +66,11 @@
 #define SERIAL_BAUD 115200
 
 // MQTT settings
-String mqtt_server = "192.168.0.254";
+#ifndef DEV_BUILD
+    String mqtt_server = "192.168.0.201";
+#else
+    String mqtt_server = "192.168.0.200";
+#endif
 int mqtt_port = 1883;
 String mqtt_clientId = "";
 String mqtt_topic = "";
