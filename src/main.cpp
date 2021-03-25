@@ -392,7 +392,7 @@ void init_mqtt() {
  *  Reconnect to MQTT server
  */
 void mqtt_reconnect() {
-    Serial.print("[MQTT ] Not connected! Attempting new connection");
+    Serial.println("[MQTT ] Not connected! Attempting new connection");
 
     if (client.connect(mqtt_clientId.c_str()))
         Serial.println("[MQTT ] Reconnected successfully");
