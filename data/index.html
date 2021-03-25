@@ -40,7 +40,11 @@
                     retVal = "type: " + typeId + " (temp / pressure)<br/>temp: " +
                     hexToUInt16(hex.substring(4, 8)) / 100 + "C<br/>humidity: " +
                     hexToUInt32(hex.substring(8, 16)) / 100 + "mbar<br/>Vbatt: " +
-                    hexToUInt16(hex.substring(16, 18)) + "mV";
+                    hexToUInt16(hex.substring(16, 20)) + "mV";
+                } else if (typeId == "0006") {
+                    retVal = "type: " + typeId + " (trigger)<br/>trigger: " +
+                    hexToUInt16(hex.substring(4, 6)) + "<br/>Vbatt: " +
+                    hexToUInt16(hex.substring(6, 10)) + "mV";
                 } else {
                     retVal = "type: " + typeId + " (unknown)<br/>payload: " + hex.substring(4);
                 }
