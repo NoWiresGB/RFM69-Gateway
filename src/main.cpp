@@ -237,16 +237,41 @@ void init_OTA() {
         // NOTE: if updating FS this would be the place to unmount FS using FS.end()
         SPIFFS.end();
         Serial.println("[OTA  ] Start updating " + type);
+
+        // update status LEDs to show OTA progress
+        pixels.setPixelColor(STATUS_NEOPX_POSITION, pixels.Color(0, 16, 0));
+        pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(0, 0, 0));
+        pixels.show();
     });
 
     ArduinoOTA.onEnd([]() {
         Serial.println("[OTA  ] Update finished");
+
+        // update complete; turn off LEDs
+        pixels.setPixelColor(STATUS_NEOPX_POSITION, pixels.Color(0, 0, 0));
+        pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(0, 0, 0));
+        pixels.show();
     });
 
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
         char buf[32];
         sprintf(buf, "[OTA  ] Progress: %u%%\r", (progress / (total / 100)));
         Serial.println(buf);
+
+        // blink alternatively between red and blue every 5%
+        if (((uint8_t)(progress / (total /100))) % 10 < 5) {
+            pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(16, 0, 0));
+            breathingLedStatus = 0;
+        } else {
+            pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(0, 0, 16));
+            breathingLedStatus = 1;
+        }
+        
+        // if the status has changed, then update the LED
+        if (radioLedStatus != breathingLedStatus) {
+            pixels.show();
+            radioLedStatus = breathingLedStatus;
+        }
     });
 
     ArduinoOTA.onError([](ota_error_t error) {
