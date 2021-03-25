@@ -390,27 +390,14 @@ void init_mqtt() {
 
 /*
  *  Reconnect to MQTT server
- *  (will need to rewrite it to be non-blocking)
  */
 void mqtt_reconnect() {
-    int exit = 1;
-    Serial.print("[MQTT ] Not connected! Attempting new connection: ");
-    while (!client.connected() && exit == 1 ) {
-        Serial.print("#");
-        if (client.connect(mqtt_clientId.c_str())) {
-            Serial.println("> OK");
-            // Once connected, publish an announcement...
-            String connected_msg = mqtt_clientId + " joined";
-            client.publish("clientJoin", connected_msg.c_str());
-            client.loop();
-        } else {
-            Serial.print("> FAIL, rc=");
-            Serial.print(client.state());
-            Serial.println(" retry in 5 seconds");
-            // Wait 5 seconds before retrying
-            delay(5000);
-        }
-    }
+    Serial.println("[MQTT ] Not connected! Attempting new connection");
+
+    if (client.connect(mqtt_clientId.c_str()))
+        Serial.println("[MQTT ] Reconnected successfully");
+    else
+        Serial.println("[MQTT ] Reconnect failed - will try again in the next loop");
 }
 
 
