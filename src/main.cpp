@@ -571,7 +571,7 @@ String processor(const String& var) {
             if (recvPackets[c].valid) {
                 s += "<tr>";
 
-                s += "<td>-";
+                s += "<td>";
                 s += ((curTime - recvPackets[c].ts) / 1000);
                 s += " s</td>";
 
@@ -640,8 +640,10 @@ void init_webServer() {
     });
 
     // route for the stylesheet
+    // no need for the 'processor' as we have no tokens to replace
+    // (plus it interferes with the % signs!)
     server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/style.css", String(), false, processor);
+        request->send(SPIFFS, "/style.css", String(), false);
     });
 
     // Start HTTP server
