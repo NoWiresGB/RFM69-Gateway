@@ -80,6 +80,8 @@ String mqtt_topic = "";
     String mqtt_base_topic = "RFM69Gw-dev";
 #endif
 String msg = "";
+unsigned long mqttMessagesIn = 0;
+unsigned long mqttMessagesOut = 0;
 
 // store the last 5 radio packets
 typedef struct {
@@ -363,6 +365,7 @@ void mqtt_callback(char* topic, byte * payload, unsigned int length) {
     Serial.print("[MQTT ] Message arrived [");
     Serial.print(topic);
     Serial.print("] ");
+    mqttMessagesIn++;
     for (unsigned int i = 0; i < length; i++)
         Serial.print((char)payload[i]);
 
@@ -512,8 +515,10 @@ void handleRadioReceive() {
     // push data to mqtt
     Serial.print(" > Pushing data to MQTT: ");
     client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
+    mqttMessagesOut++;
 #ifdef PUSH_RSSI_TO_MQTT
     client.publish(String(mqtt_topic + theData.nodeId + "/rssi" ).c_str(), String(radio.readRSSI()).c_str());
+    mqttMessagesOut++;
 #endif
     Serial.println("done");
 
@@ -556,9 +561,47 @@ void init_mDNS() {
 String processor(const String& var) {
     if (var == "HOSTNAME")
         return hostName + ".local";
-    else if (var == "UPTIME")
-        return uptime_formatter::getUptime();
-    else if (var == "RECVPACKETS") {
+    else if (var == "D1STATS") {
+        String s = "";
+        s += "<li>" + uptime_formatter::getUptime() + "</li>";
+
+        return s;
+    } else if (var == "RFM69STATS") {
+        String s = "";
+        s += "<li>Frequency: ";
+        s += radio.getFrequency() / 1000000;
+        s += "MHz</li>";
+        s += "<li>Network ID: ";
+        s += NETWORKID;
+        s += "</li>";
+        s += "<li>Node ID: ";
+        s += NODEID;
+        s += "</li>";
+        s += "<li>Power level: ";
+        s += -18 + radio.getPowerLevel();
+        s += "dBm</li>";
+        s += "<li>Temperature: ";
+        s += radio.readTemperature();
+        s += "C</li>";
+
+        return s;
+    } else if (var == "MQTTSTATS") {
+        String s = "";
+        s += "<li>Connected: ";
+        s += client.connected() ? "yes" : "no";
+        s += "</li>";
+        s += "<li>Server: ";
+        s += mqtt_server;
+        s += "</li>";
+        s += "<li>Inbound messages: ";
+        s += mqttMessagesIn;
+        s += "</li>";
+        s += "<li>Outbound messages: ";
+        s += mqttMessagesOut;
+        s += "</li>";
+
+        return s;
+    } else if (var == "RECVPACKETS") {
         String s = "";
         // max data length is 61, so we allocate 2x61 + 1 for string termination
         char  hexData[123];

@@ -76,7 +76,7 @@
                 <h1>%HOSTNAME%</h1>
                 <h3>RFM69 to MQTT bridge</h3>
             </center>
-            <p>Uptime: %UPTIME%</p>
+
             <p>Last 5 packets:</p>
             <table>
                 <tr>
@@ -89,6 +89,27 @@
                 </tr>
                 %RECVPACKETS%
             </table>
+
+            <div class="left">
+                <h4>D1 mini Pro</h4>
+                <ul>
+                    %D1STATS%
+                </ul>
+            </div>
+
+            <div class="left">
+                <h4>RFM69</h4>
+                <ul>
+                    %RFM69STATS%
+                </ul>
+            </div>
+
+            <div class="left">
+                <h4>MQTT</h4>
+                <ul>
+                    %MQTTSTATS%
+                </ul>
+            </div>
         </div>
     </body>
 </html>
