@@ -82,6 +82,10 @@ String mqtt_topic = "";
 String msg = "";
 unsigned long mqttMessagesIn = 0;
 unsigned long mqttMessagesOut = 0;
+unsigned long mqttLastReconnectAttempt = 0;
+bool mqttLoggedBackoffEvent = false;
+
+#define MQTT_BACKOFF_TIMER  5000
 
 // store the last 5 radio packets
 typedef struct {
@@ -174,16 +178,10 @@ uint32_t radioActivityLEDColour = pixels.Color(16, 0, 8);
 #define STATUS_NEOPX_COLOUR NEOPIXEL_COLOUR_RED
 
 // how often whilst waiting for input to do HB indicator
-unsigned int HB = 10000;
-
-// number of chars on output for HB indicator line wrap
-int max_width = 40;
+#define SYSTEM_HEARTBEAT_INTERVAL   10000
 
 // polling loop ms register
-long unsigned int last_check_millis = 0;
-
-// pretty serial output
-int cur_width = 0;
+unsigned long last_check_millis = 0;
 
 // RFM96 receiver struct
 // this does not contain the actual payload; only the node ID
@@ -398,7 +396,7 @@ void init_mqtt() {
   }
 */
     // can only setup clientID and topic once WiFi is up
-    mqtt_clientId = WiFi.macAddress();
+    mqtt_clientId = hostName + "-" + WiFi.macAddress();
 #ifdef ADD_MAC_TO_MQTT_TOPIC
     mqtt_topic = mqtt_base_topic + "/" + mqtt_clientId + "/";
 #else
@@ -420,12 +418,23 @@ void init_mqtt() {
  *  Reconnect to MQTT server
  */
 void mqtt_reconnect() {
-    Serial.println("[MQTT ] Not connected! Attempting new connection");
+    // obey the MQTT reconnect timer
+    if (millis() - MQTT_BACKOFF_TIMER > mqttLastReconnectAttempt || millis() < mqttLastReconnectAttempt) {
+        Serial.println("[MQTT ] Not connected! Attempting new connection");
 
-    if (client.connect(mqtt_clientId.c_str()))
-        Serial.println("[MQTT ] Reconnected successfully");
-    else
-        Serial.println("[MQTT ] Reconnect failed - will try again in the next loop");
+        if (client.connect(mqtt_clientId.c_str()))
+            Serial.println("[MQTT ] Reconnected successfully");
+        else
+            Serial.println("[MQTT ] Reconnect failed - will try again in the next loop");
+        
+        // save the last reconnect attempt
+        mqttLastReconnectAttempt = millis();
+        mqttLoggedBackoffEvent = false;
+    } else
+        if (!mqttLoggedBackoffEvent) {
+            Serial.println("[MQTT ] Not connected! Backoff timer not expired yet, so delaying reconnect.");
+            mqttLoggedBackoffEvent = true;
+        }
 }
 
 
@@ -474,7 +483,6 @@ void handleRadioReceive() {
     radioLedStatus = STATUS_RADIO_NEOPX_ON;
 
     // output info on received radio data
-    Serial.println();
     Serial.print("[RFM96] RCVD [Node:");
     Serial.print(radio.SENDERID, DEC);
     Serial.print("  RSSI:");
@@ -498,7 +506,7 @@ void handleRadioReceive() {
     String hexPayload = String(hexData);
 
     // output raw data payload
-    Serial.print("[RFM96]  > Data received [");
+    Serial.print("[RFM96] Data received [");
     Serial.print(radio.DATALEN);
     Serial.print("b]: [");
 
@@ -513,7 +521,7 @@ void handleRadioReceive() {
     theData = *(Payload*)tPtr;
 
     // push data to mqtt
-    Serial.print(" > Pushing data to MQTT: ");
+    Serial.print("[MQTT ] Pushing data to MQTT: ");
     client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
     mqttMessagesOut++;
 #ifdef PUSH_RSSI_TO_MQTT
@@ -538,9 +546,9 @@ void handleRadioReceive() {
     // send back ack if requested (do this ASAP - before other processing)
     if (radio.ACKRequested()) {
         // send back ack 
-        Serial.print(" > Ack requested, sending: ");
+        Serial.print("[RFM69] Ack requested, sending: ");
         radio.sendACK();
-        Serial.println("sent.");
+        Serial.println("sent");
     }
 }
 
@@ -563,7 +571,11 @@ String processor(const String& var) {
         return hostName + ".local";
     else if (var == "D1STATS") {
         String s = "";
-        s += "<li>" + uptime_formatter::getUptime() + "</li>";
+        s += "<li>Uptime: " + uptime_formatter::getUptime() + "</li>";
+        s += "<li>Free memory: ";
+        s += ESP.getFreeHeap();
+        s += " bytes</>li>";
+        s += "<li>MAC address: " + WiFi.macAddress() + "</li>";
 
         return s;
     } else if (var == "RFM69STATS") {
@@ -746,23 +758,17 @@ void loop() {
     // call MQTT loop to handle active connection
     if (!client.connected())
         mqtt_reconnect();
-    client.loop();
+    else
+        client.loop();
 
     // handle OTA stuff
     // this updates mDNS as well
     ArduinoOTA.handle();
 
     // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
-    if ( millis() - last_check_millis > HB ) {
-        Serial.print (".");
+    if ( millis() - last_check_millis > SYSTEM_HEARTBEAT_INTERVAL ) {
+        Serial.println("[SYS  ] Heartbeat");
         last_check_millis = millis();
-
-        // line wrap handler for debug output
-        cur_width++;
-        if (cur_width > max_width) {
-            Serial.println();
-            cur_width = 0;
-        }
     }
  
     // handle any serial input
