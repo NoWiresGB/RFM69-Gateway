@@ -512,9 +512,18 @@ void handleRadioReceive() {
 
     for(byte i = 0; i < hexPayload.length(); i += 2) {
         Serial.print(hexPayload.substring(i, i + 2));
-        Serial.print(" ");
+        if (i < hexPayload.length() - 2)
+            Serial.print(" ");
     }
     Serial.println("]");
+
+    // send back ack if requested (do this ASAP - before other processing)
+    if (radio.ACKRequested()) {
+        // send back ack 
+        Serial.print("[RFM69] Ack requested, sending: ");
+        radio.sendACK();
+        Serial.println("sent");
+    }
 
     // temporary char* to work around strict aliasing
     char *tPtr = (char*)radio.DATA;
@@ -542,14 +551,6 @@ void handleRadioReceive() {
     memcpy(recvPackets[lastPacket].data, radio.DATA, sizeof radio.DATA);
     recvPackets[lastPacket].rssi = radio.RSSI;
     recvPackets[lastPacket].ackReq = radio.ACK_REQUESTED;
-
-    // send back ack if requested (do this ASAP - before other processing)
-    if (radio.ACKRequested()) {
-        // send back ack 
-        Serial.print("[RFM69] Ack requested, sending: ");
-        radio.sendACK();
-        Serial.println("sent");
-    }
 }
 
 
