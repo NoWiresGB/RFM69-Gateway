@@ -25,6 +25,10 @@
 // this changes the hostname, MQTT base topic and network id
 // #define DEV_BUILD
 
+// Uncomment this if you want to log loop times
+// this is only required for troubleshooting
+// #define LOG_LOOP_TIMES
+
 #include <Arduino.h>
 
 // RFM libs
@@ -182,6 +186,16 @@ uint32_t radioActivityLEDColour = pixels.Color(16, 0, 8);
 
 // polling loop ms register
 unsigned long last_check_millis = 0;
+
+#ifdef LOG_LOOP_TIMES
+    unsigned long loopTimeStart = 0;
+    unsigned long loopTime = 0;
+    unsigned long loopTimeAverage = 0;
+    unsigned long loopTimeMax = 0;
+    unsigned long loopTimeMin = 0;
+    unsigned long loopCounter = 0;
+    bool loopStatReset = false;
+#endif
 
 // RFM96 receiver struct
 // this does not contain the actual payload; only the node ID
@@ -396,7 +410,7 @@ void init_mqtt() {
   }
 */
     // can only setup clientID and topic once WiFi is up
-    mqtt_clientId = hostName + "-" + WiFi.macAddress();
+    mqtt_clientId = hostName + "-" + WiFi.macAddress() + "-" + String(random(0xffff), HEX);
 #ifdef ADD_MAC_TO_MQTT_TOPIC
     mqtt_topic = mqtt_base_topic + "/" + mqtt_clientId + "/";
 #else
@@ -420,11 +434,15 @@ void init_mqtt() {
 void mqtt_reconnect() {
     // obey the MQTT reconnect timer
     if (millis() - MQTT_BACKOFF_TIMER > mqttLastReconnectAttempt || millis() < mqttLastReconnectAttempt) {
+        // regenerate client id
+        mqtt_clientId = hostName + "-" + WiFi.macAddress() + "-" + String(random(0xffff), HEX);
+
         Serial.println("[MQTT ] Not connected! Attempting new connection");
 
-        if (client.connect(mqtt_clientId.c_str()))
+        if (client.connect(mqtt_clientId.c_str())) {
+            client.loop();
             Serial.println("[MQTT ] Reconnected successfully");
-        else
+        } else
             Serial.println("[MQTT ] Reconnect failed - will try again in the next loop");
         
         // save the last reconnect attempt
@@ -482,6 +500,8 @@ void handleRadioReceive() {
     radioStatusOnTime = millis();
     radioLedStatus = STATUS_RADIO_NEOPX_ON;
 
+    // TODO: first save the packet, then ACK it ASAP, then do all the logging!
+
     // output info on received radio data
     Serial.print("[RFM96] RCVD [Node:");
     Serial.print(radio.SENDERID, DEC);
@@ -517,6 +537,19 @@ void handleRadioReceive() {
     }
     Serial.println("]");
 
+    // save the received radio packet into our buffer
+    lastPacket++;
+    if (lastPacket > 4)
+        lastPacket = 0;
+
+    recvPackets[lastPacket].valid = true;
+    recvPackets[lastPacket].ts = millis();
+    recvPackets[lastPacket].senderId = radio.SENDERID;
+    recvPackets[lastPacket].dataLen = radio.DATALEN;
+    memcpy(recvPackets[lastPacket].data, radio.DATA, sizeof radio.DATA);
+    recvPackets[lastPacket].rssi = radio.RSSI;
+    recvPackets[lastPacket].ackReq = radio.ACK_REQUESTED;
+
     // send back ack if requested (do this ASAP - before other processing)
     if (radio.ACKRequested()) {
         // send back ack 
@@ -531,26 +564,22 @@ void handleRadioReceive() {
 
     // push data to mqtt
     Serial.print("[MQTT ] Pushing data to MQTT: ");
-    client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
-    mqttMessagesOut++;
+    if (client.connected()) {
+        client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
+        client.loop();
+        mqttMessagesOut++;
+    }
 #ifdef PUSH_RSSI_TO_MQTT
-    client.publish(String(mqtt_topic + theData.nodeId + "/rssi" ).c_str(), String(radio.readRSSI()).c_str());
-    mqttMessagesOut++;
+    if (client.connected()) {
+        client.publish(String(mqtt_topic + theData.nodeId + "/rssi" ).c_str(), String(radio.readRSSI()).c_str());
+        client.loop();
+        mqttMessagesOut++;
+    }
 #endif
-    Serial.println("done");
-
-    // save the received radio packet into our buffer
-    lastPacket++;
-    if (lastPacket > 4)
-        lastPacket = 0;
-
-    recvPackets[lastPacket].valid = true;
-    recvPackets[lastPacket].ts = millis();
-    recvPackets[lastPacket].senderId = radio.SENDERID;
-    recvPackets[lastPacket].dataLen = radio.DATALEN;
-    memcpy(recvPackets[lastPacket].data, radio.DATA, sizeof radio.DATA);
-    recvPackets[lastPacket].rssi = radio.RSSI;
-    recvPackets[lastPacket].ackReq = radio.ACK_REQUESTED;
+    if (client.connected())
+        Serial.println("done");
+    else
+        Serial.println("failed; not connected!");
 }
 
 
@@ -575,7 +604,7 @@ String processor(const String& var) {
         s += "<li>Uptime: " + uptime_formatter::getUptime() + "</li>";
         s += "<li>Free memory: ";
         s += ESP.getFreeHeap();
-        s += " bytes</>li>";
+        s += " bytes</li>";
         s += "<li>MAC address: " + WiFi.macAddress() + "</li>";
 
         return s;
@@ -702,6 +731,19 @@ void init_webServer() {
         request->send(SPIFFS, "/style.css", String(), false);
     });
 
+    // favicon entries
+    server.on("/favicon-16x16.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon-16x16.png", String(), false);
+    });
+
+    server.on("/favicon-32x32.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon-32x32.png", String(), false);
+    });
+
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon.ico", String(), false);
+    });
+
     // Start HTTP server
     server.begin();
 
@@ -756,6 +798,9 @@ void setup() {
  *  Main loop
  */
 void loop() {
+#ifdef LOG_LOOP_TIMES
+    loopTimeStart = millis();
+#endif
     // call MQTT loop to handle active connection
     if (!client.connected())
         mqtt_reconnect();
@@ -770,6 +815,22 @@ void loop() {
     if ( millis() - last_check_millis > SYSTEM_HEARTBEAT_INTERVAL ) {
         Serial.println("[SYS  ] Heartbeat");
         last_check_millis = millis();
+#ifdef LOG_LOOP_TIMES
+        Serial.print("[SYS  ] Avg loop time: ");
+        Serial.print(loopTimeAverage);
+        Serial.print("ms, min: ");
+        Serial.print(loopTimeMin);
+        Serial.print("ms, max: ");
+        Serial.print(loopTimeMax);
+        Serial.print("ms, loops: ");
+        Serial.println(loopCounter);
+
+        loopCounter = 0;
+        loopTimeAverage = 0;
+        loopTimeMax = 0;
+        loopTimeMin = 0;
+        loopStatReset = true;
+#endif
     }
  
     // handle any serial input
@@ -852,4 +913,22 @@ void loop() {
             pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(0, 0, 0));
             pixels.show();
         }
+
+#ifdef LOG_LOOP_TIMES
+    if (!loopStatReset) {
+        loopTime = millis() - loopTimeStart;
+
+        //loopTimeAverage = (loopTimeAverage * loopCounter + loopTime) / 2;
+        loopTimeAverage = (loopTimeAverage * loopCounter + loopTime) / (loopCounter + 1);
+
+        if (loopTime < loopTimeMin || loopTimeMin == 0)
+            loopTimeMin = loopTime;
+
+        if (loopTime > loopTimeMax || loopTimeMax == 0)
+            loopTimeMax = loopTime;
+
+        loopCounter++;
+    } else
+        loopStatReset = false;
+#endif
 }
