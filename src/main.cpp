@@ -212,6 +212,10 @@ PubSubClient client(espClient);
 AsyncWebServer server(80);
 DNSServer dns;
 
+// buffer to dump radio data into
+// max data length is 61, so we allocate 2x61 + 1 for string termination
+char  hexData[123];
+
 
 /*
  *  Helper to zero pad numbers
@@ -501,42 +505,6 @@ void handleRadioReceive() {
     radioLedStatus = STATUS_RADIO_NEOPX_ON;
 
     // TODO: first save the packet, then ACK it ASAP, then do all the logging!
-
-    // output info on received radio data
-    Serial.print("[RFM96] RCVD [Node:");
-    Serial.print(radio.SENDERID, DEC);
-    Serial.print("  RSSI:");
-    Serial.print(radio.readRSSI());
-    Serial.print("] ");    
-    if (promiscuousMode) {
-        Serial.print("to [");
-        Serial.print(radio.TARGETID, DEC);
-        Serial.print("] ");
-    }
-    Serial.println();
-
-    // max data length is 61, so we allocate 2x61 + 1 for string termination
-    char  hexData[123];
-    byte  ptr = 0;
-    for (byte i = 0; i < radio.DATALEN; i++) {
-        hexData[ptr++] = hexDigit(radio.DATA[i] >> 4);
-        hexData[ptr++] = hexDigit(radio.DATA[i]);
-    }
-    hexData[ptr] = '\0';
-    String hexPayload = String(hexData);
-
-    // output raw data payload
-    Serial.print("[RFM96] Data received [");
-    Serial.print(radio.DATALEN);
-    Serial.print("b]: [");
-
-    for(byte i = 0; i < hexPayload.length(); i += 2) {
-        Serial.print(hexPayload.substring(i, i + 2));
-        if (i < hexPayload.length() - 2)
-            Serial.print(" ");
-    }
-    Serial.println("]");
-
     // save the received radio packet into our buffer
     lastPacket++;
     if (lastPacket > 4)
@@ -558,8 +526,41 @@ void handleRadioReceive() {
         Serial.println("sent");
     }
 
+    // output info on received radio data
+    Serial.print("[RFM96] RCVD [Node:");
+    Serial.print(recvPackets[lastPacket].senderId, DEC);
+    Serial.print("  RSSI:");
+    Serial.print(recvPackets[lastPacket].rssi);
+    Serial.print("] ");
+    if (promiscuousMode) {
+        Serial.print("to [");
+        Serial.print(radio.TARGETID, DEC);
+        Serial.print("] ");
+    }
+    Serial.println();
+
+    byte  ptr = 0;
+    for (byte i = 0; i < recvPackets[lastPacket].dataLen; i++) {
+        hexData[ptr++] = hexDigit(recvPackets[lastPacket].data[i] >> 4);
+        hexData[ptr++] = hexDigit(recvPackets[lastPacket].data[i]);
+    }
+    hexData[ptr] = '\0';
+    String hexPayload = String(hexData);
+
+    // output raw data payload
+    Serial.print("[RFM96] Data received [");
+    Serial.print(recvPackets[lastPacket].dataLen);
+    Serial.print("b]: [");
+
+    for(byte i = 0; i < hexPayload.length(); i += 2) {
+        Serial.print(hexPayload.substring(i, i + 2));
+        if (i < hexPayload.length() - 2)
+            Serial.print(" ");
+    }
+    Serial.println("]");
+
     // temporary char* to work around strict aliasing
-    char *tPtr = (char*)radio.DATA;
+    char *tPtr = (char*)recvPackets[lastPacket].data;
     theData = *(Payload*)tPtr;
 
     // push data to mqtt
