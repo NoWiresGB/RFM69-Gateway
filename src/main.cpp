@@ -91,7 +91,9 @@ bool mqttLoggedBackoffEvent = false;
 
 #define MQTT_BACKOFF_TIMER  5000
 
-// store the last 5 radio packets
+#define NUM_PACKETS_TO_STORE    10
+
+// store the last NUM_PACKETS_TO_STORE radio packets
 typedef struct {
     bool valid;
     unsigned long ts;
@@ -103,7 +105,7 @@ typedef struct {
 } __attribute__((packed)) RadioPacket;
 
 // use a ring-buffer for radio packet storage
-RadioPacket recvPackets[5];
+RadioPacket recvPackets[NUM_PACKETS_TO_STORE];
 uint8_t lastPacket = -1;
 
 // add WiFi MAC address to the publish topic
@@ -507,7 +509,7 @@ void handleRadioReceive() {
     // TODO: first save the packet, then ACK it ASAP, then do all the logging!
     // save the received radio packet into our buffer
     lastPacket++;
-    if (lastPacket > 4)
+    if (lastPacket > NUM_PACKETS_TO_STORE)
         lastPacket = 0;
 
     recvPackets[lastPacket].valid = true;
@@ -642,8 +644,15 @@ String processor(const String& var) {
         s += "<li>Outbound messages: ";
         s += mqttMessagesOut;
         s += "</li>";
+#ifdef PUSH_RSSI_TO_MQTT
+        s += "<li>Send RSSI to MQTT: yes</li>";
+#else
+        s += "<li>Send RSSI to MQTT: no</li>";
+#endif
 
         return s;
+    } else if (var == "NUMSTOREDPACKETS") {
+        return String(NUM_PACKETS_TO_STORE);
     } else if (var == "RECVPACKETS") {
         String s = "";
         // max data length is 61, so we allocate 2x61 + 1 for string termination
@@ -653,7 +662,7 @@ String processor(const String& var) {
         unsigned long curTime = millis();
 
         int8_t c = lastPacket;
-        for (uint8_t i = 0; i < 5; i++) {
+        for (uint8_t i = 0; i < NUM_PACKETS_TO_STORE; i++) {
             if (recvPackets[c].valid) {
                 s += "<tr>";
 
@@ -702,7 +711,7 @@ String processor(const String& var) {
             // move on to the previous packet
             c--;
             if (c < 0)
-                c = 4;
+                c = NUM_PACKETS_TO_STORE - 1;
         }
 
         return s;
