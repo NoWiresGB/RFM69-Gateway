@@ -138,9 +138,6 @@ uint8_t lastPacket = -1;
     RFM69 radio(D0, D8);
 #endif
 
-//set to 'true' to sniff all packets on the same network
-bool promiscuousMode = false;
-
 //*********************************************************************************************
 // WS2812 neopixel stuff
 //*********************************************************************************************
@@ -335,7 +332,7 @@ void init_radio() {
     Serial.print(ENCRYPTKEY);
     Serial.println("]");
     radio.encrypt(ENCRYPTKEY);
-    radio.spyMode(promiscuousMode); 
+    radio.spyMode(false);
 
     Serial.print("[RFM96] initialised, listening @ ");
     char buff[10];
@@ -488,12 +485,6 @@ void handleSerial() {
     else if (input == 'e')
         //e=disable encryption
         radio.encrypt(null);
-    else if (input == 'p') {
-        promiscuousMode = !promiscuousMode;
-        radio.spyMode(promiscuousMode);
-        Serial.print("Promiscuous mode ");
-        Serial.println(promiscuousMode ? "on" : "off");
-    }
 }
 
 
@@ -535,13 +526,7 @@ void handleRadioReceive() {
     Serial.print(recvPackets[lastPacket].senderId, DEC);
     Serial.print("  RSSI:");
     Serial.print(recvPackets[lastPacket].rssi);
-    Serial.print("] ");
-    if (promiscuousMode) {
-        Serial.print("to [");
-        Serial.print(radio.TARGETID, DEC);
-        Serial.print("] ");
-    }
-    Serial.println();
+    Serial.println("] ");
 
     byte  ptr = 0;
     for (byte i = 0; i < recvPackets[lastPacket].dataLen; i++) {
