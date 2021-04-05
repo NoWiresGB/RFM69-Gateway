@@ -218,6 +218,8 @@ DNSServer dns;
 // max data length is 61, so we allocate 2x61 + 1 for string termination
 char  hexData[123];
 
+// store the free heap after startup, so we can see a percentage utilisation
+uint32_t    startupFreeHeap;
 
 /*
  *  Helper to zero pad numbers
@@ -607,7 +609,9 @@ String processor(const String& var) {
         s += "<li>Uptime: " + uptime_formatter::getUptime() + "</li>";
         s += "<li>Free memory: ";
         s += ESP.getFreeHeap();
-        s += " bytes</li>";
+        s += " bytes (";
+        s += ESP.getFreeHeap() / (double)startupFreeHeap * 100;
+        s += "&#37; of startup)</li>";
         s += "<li>MAC address: " + WiFi.macAddress() + "</li>";
 
         return s;
@@ -801,6 +805,9 @@ void setup() {
 
     Serial.println("[SETUP] Complete");
     Serial.println("--------------------------------");
+
+    // save free heap
+    startupFreeHeap = ESP.getFreeHeap();
 }
 
 
