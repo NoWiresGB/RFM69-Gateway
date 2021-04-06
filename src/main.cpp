@@ -502,7 +502,7 @@ void handleRadioReceive() {
     // TODO: first save the packet, then ACK it ASAP, then do all the logging!
     // save the received radio packet into our buffer
     lastPacket++;
-    if (lastPacket > NUM_PACKETS_TO_STORE)
+    if (lastPacket > NUM_PACKETS_TO_STORE - 1)
         lastPacket = 0;
 
     recvPackets[lastPacket].valid = true;
