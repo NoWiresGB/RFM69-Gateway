@@ -492,13 +492,6 @@ void handleSerial() {
  *  Process data received over radio
  */
 void handleRadioReceive() {
-    // light up the radio status LED
-    pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, radioActivityLEDColour);
-    pixels.show();
-
-    radioStatusOnTime = millis();
-    radioLedStatus = STATUS_RADIO_NEOPX_ON;
-
     // TODO: first save the packet, then ACK it ASAP, then do all the logging!
     // save the received radio packet into our buffer
     lastPacket++;
@@ -520,6 +513,13 @@ void handleRadioReceive() {
         radio.sendACK();
         Serial.println("sent");
     }
+
+    // light up the radio status LED
+    pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, radioActivityLEDColour);
+    pixels.show();
+
+    radioStatusOnTime = millis();
+    radioLedStatus = STATUS_RADIO_NEOPX_ON;
 
     // output info on received radio data
     Serial.print("[RFM96] RCVD [Node:");
@@ -656,7 +656,7 @@ String processor(const String& var) {
                 s += "<tr>";
 
                 s += "<td>";
-                s += ((curTime - recvPackets[c].ts) / 1000);
+                s += (((float)curTime - recvPackets[c].ts) / 1000);
                 s += " s</td>";
 
                 s += "<td>";
