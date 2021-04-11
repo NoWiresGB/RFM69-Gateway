@@ -25,6 +25,10 @@
 // this changes the hostname, MQTT base topic and network id
 // #define DEV_BUILD
 
+// Uncomment this if you want to log loop times
+// this is only required for troubleshooting
+// #define LOG_LOOP_TIMES
+
 #include <Arduino.h>
 
 // RFM libs
@@ -80,8 +84,16 @@ String mqtt_topic = "";
     String mqtt_base_topic = "RFM69Gw-dev";
 #endif
 String msg = "";
+unsigned long mqttMessagesIn = 0;
+unsigned long mqttMessagesOut = 0;
+unsigned long mqttLastReconnectAttempt = 0;
+bool mqttLoggedBackoffEvent = false;
 
-// store the last 5 radio packets
+#define MQTT_BACKOFF_TIMER  5000
+
+#define NUM_PACKETS_TO_STORE    10
+
+// store the last NUM_PACKETS_TO_STORE radio packets
 typedef struct {
     bool valid;
     unsigned long ts;
@@ -93,7 +105,7 @@ typedef struct {
 } __attribute__((packed)) RadioPacket;
 
 // use a ring-buffer for radio packet storage
-RadioPacket recvPackets[5];
+RadioPacket recvPackets[NUM_PACKETS_TO_STORE];
 uint8_t lastPacket = -1;
 
 // add WiFi MAC address to the publish topic
@@ -125,9 +137,6 @@ uint8_t lastPacket = -1;
 #else
     RFM69 radio(D0, D8);
 #endif
-
-//set to 'true' to sniff all packets on the same network
-bool promiscuousMode = false;
 
 //*********************************************************************************************
 // WS2812 neopixel stuff
@@ -172,16 +181,20 @@ uint32_t radioActivityLEDColour = pixels.Color(16, 0, 8);
 #define STATUS_NEOPX_COLOUR NEOPIXEL_COLOUR_RED
 
 // how often whilst waiting for input to do HB indicator
-unsigned int HB = 10000;
-
-// number of chars on output for HB indicator line wrap
-int max_width = 40;
+#define SYSTEM_HEARTBEAT_INTERVAL   10000
 
 // polling loop ms register
-long unsigned int last_check_millis = 0;
+unsigned long last_check_millis = 0;
 
-// pretty serial output
-int cur_width = 0;
+#ifdef LOG_LOOP_TIMES
+    unsigned long loopTimeStart = 0;
+    unsigned long loopTime = 0;
+    unsigned long loopTimeAverage = 0;
+    unsigned long loopTimeMax = 0;
+    unsigned long loopTimeMin = 0;
+    unsigned long loopCounter = 0;
+    bool loopStatReset = false;
+#endif
 
 // RFM96 receiver struct
 // this does not contain the actual payload; only the node ID
@@ -198,6 +211,12 @@ PubSubClient client(espClient);
 AsyncWebServer server(80);
 DNSServer dns;
 
+// buffer to dump radio data into
+// max data length is 61, so we allocate 2x61 + 1 for string termination
+char  hexData[123];
+
+// store the free heap after startup, so we can see a percentage utilisation
+uint32_t    startupFreeHeap;
 
 /*
  *  Helper to zero pad numbers
@@ -313,7 +332,7 @@ void init_radio() {
     Serial.print(ENCRYPTKEY);
     Serial.println("]");
     radio.encrypt(ENCRYPTKEY);
-    radio.spyMode(promiscuousMode); 
+    radio.spyMode(false);
 
     Serial.print("[RFM96] initialised, listening @ ");
     char buff[10];
@@ -363,6 +382,7 @@ void mqtt_callback(char* topic, byte * payload, unsigned int length) {
     Serial.print("[MQTT ] Message arrived [");
     Serial.print(topic);
     Serial.print("] ");
+    mqttMessagesIn++;
     for (unsigned int i = 0; i < length; i++)
         Serial.print((char)payload[i]);
 
@@ -395,7 +415,7 @@ void init_mqtt() {
   }
 */
     // can only setup clientID and topic once WiFi is up
-    mqtt_clientId = WiFi.macAddress();
+    mqtt_clientId = hostName + "-" + WiFi.macAddress() + "-" + String(random(0xffff), HEX);
 #ifdef ADD_MAC_TO_MQTT_TOPIC
     mqtt_topic = mqtt_base_topic + "/" + mqtt_clientId + "/";
 #else
@@ -417,12 +437,27 @@ void init_mqtt() {
  *  Reconnect to MQTT server
  */
 void mqtt_reconnect() {
-    Serial.println("[MQTT ] Not connected! Attempting new connection");
+    // obey the MQTT reconnect timer
+    if (millis() - MQTT_BACKOFF_TIMER > mqttLastReconnectAttempt || millis() < mqttLastReconnectAttempt) {
+        // regenerate client id
+        mqtt_clientId = hostName + "-" + WiFi.macAddress() + "-" + String(random(0xffff), HEX);
 
-    if (client.connect(mqtt_clientId.c_str()))
-        Serial.println("[MQTT ] Reconnected successfully");
-    else
-        Serial.println("[MQTT ] Reconnect failed - will try again in the next loop");
+        Serial.println("[MQTT ] Not connected! Attempting new connection");
+
+        if (client.connect(mqtt_clientId.c_str())) {
+            client.loop();
+            Serial.println("[MQTT ] Reconnected successfully");
+        } else
+            Serial.println("[MQTT ] Reconnect failed - will try again in the next loop");
+        
+        // save the last reconnect attempt
+        mqttLastReconnectAttempt = millis();
+        mqttLoggedBackoffEvent = false;
+    } else
+        if (!mqttLoggedBackoffEvent) {
+            Serial.println("[MQTT ] Not connected! Backoff timer not expired yet, so delaying reconnect.");
+            mqttLoggedBackoffEvent = true;
+        }
 }
 
 
@@ -450,12 +485,6 @@ void handleSerial() {
     else if (input == 'e')
         //e=disable encryption
         radio.encrypt(null);
-    else if (input == 'p') {
-        promiscuousMode = !promiscuousMode;
-        radio.spyMode(promiscuousMode);
-        Serial.print("Promiscuous mode ");
-        Serial.println(promiscuousMode ? "on" : "off");
-    }
 }
 
 
@@ -463,63 +492,10 @@ void handleSerial() {
  *  Process data received over radio
  */
 void handleRadioReceive() {
-    // light up the radio status LED
-    pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, radioActivityLEDColour);
-    pixels.show();
-
-    radioStatusOnTime = millis();
-    radioLedStatus = STATUS_RADIO_NEOPX_ON;
-
-    // output info on received radio data
-    Serial.println();
-    Serial.print("[RFM96] RCVD [Node:");
-    Serial.print(radio.SENDERID, DEC);
-    Serial.print("  RSSI:");
-    Serial.print(radio.readRSSI());
-    Serial.print("] ");    
-    if (promiscuousMode) {
-        Serial.print("to [");
-        Serial.print(radio.TARGETID, DEC);
-        Serial.print("] ");
-    }
-    Serial.println();
-
-    // max data length is 61, so we allocate 2x61 + 1 for string termination
-    char  hexData[123];
-    byte  ptr = 0;
-    for (byte i = 0; i < radio.DATALEN; i++) {
-        hexData[ptr++] = hexDigit(radio.DATA[i] >> 4);
-        hexData[ptr++] = hexDigit(radio.DATA[i]);
-    }
-    hexData[ptr] = '\0';
-    String hexPayload = String(hexData);
-
-    // output raw data payload
-    Serial.print("[RFM96]  > Data received [");
-    Serial.print(radio.DATALEN);
-    Serial.print("b]: [");
-
-    for(byte i = 0; i < hexPayload.length(); i += 2) {
-        Serial.print(hexPayload.substring(i, i + 2));
-        Serial.print(" ");
-    }
-    Serial.println("]");
-
-    // temporary char* to work around strict aliasing
-    char *tPtr = (char*)radio.DATA;
-    theData = *(Payload*)tPtr;
-
-    // push data to mqtt
-    Serial.print(" > Pushing data to MQTT: ");
-    client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
-#ifdef PUSH_RSSI_TO_MQTT
-    client.publish(String(mqtt_topic + theData.nodeId + "/rssi" ).c_str(), String(radio.readRSSI()).c_str());
-#endif
-    Serial.println("done");
-
+    // TODO: first save the packet, then ACK it ASAP, then do all the logging!
     // save the received radio packet into our buffer
     lastPacket++;
-    if (lastPacket > 4)
+    if (lastPacket > NUM_PACKETS_TO_STORE - 1)
         lastPacket = 0;
 
     recvPackets[lastPacket].valid = true;
@@ -533,10 +509,67 @@ void handleRadioReceive() {
     // send back ack if requested (do this ASAP - before other processing)
     if (radio.ACKRequested()) {
         // send back ack 
-        Serial.print(" > Ack requested, sending: ");
+        Serial.print("[RFM69] Ack requested, sending: ");
         radio.sendACK();
-        Serial.println("sent.");
+        Serial.println("sent");
     }
+
+    // light up the radio status LED
+    pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, radioActivityLEDColour);
+    pixels.show();
+
+    radioStatusOnTime = millis();
+    radioLedStatus = STATUS_RADIO_NEOPX_ON;
+
+    // output info on received radio data
+    Serial.print("[RFM96] RCVD [Node:");
+    Serial.print(recvPackets[lastPacket].senderId, DEC);
+    Serial.print("  RSSI:");
+    Serial.print(recvPackets[lastPacket].rssi);
+    Serial.println("] ");
+
+    byte  ptr = 0;
+    for (byte i = 0; i < recvPackets[lastPacket].dataLen; i++) {
+        hexData[ptr++] = hexDigit(recvPackets[lastPacket].data[i] >> 4);
+        hexData[ptr++] = hexDigit(recvPackets[lastPacket].data[i]);
+    }
+    hexData[ptr] = '\0';
+    String hexPayload = String(hexData);
+
+    // output raw data payload
+    Serial.print("[RFM96] Data received [");
+    Serial.print(recvPackets[lastPacket].dataLen);
+    Serial.print("b]: [");
+
+    for(byte i = 0; i < hexPayload.length(); i += 2) {
+        Serial.print(hexPayload.substring(i, i + 2));
+        if (i < hexPayload.length() - 2)
+            Serial.print(" ");
+    }
+    Serial.println("]");
+
+    // temporary char* to work around strict aliasing
+    char *tPtr = (char*)recvPackets[lastPacket].data;
+    theData = *(Payload*)tPtr;
+
+    // push data to mqtt
+    Serial.print("[MQTT ] Pushing data to MQTT: ");
+    if (client.connected()) {
+        client.publish(String(mqtt_topic + theData.nodeId + "/payload" ).c_str(), hexPayload.c_str());
+        client.loop();
+        mqttMessagesOut++;
+    }
+#ifdef PUSH_RSSI_TO_MQTT
+    if (client.connected()) {
+        client.publish(String(mqtt_topic + theData.nodeId + "/rssi" ).c_str(), String(radio.readRSSI()).c_str());
+        client.loop();
+        mqttMessagesOut++;
+    }
+#endif
+    if (client.connected())
+        Serial.println("done");
+    else
+        Serial.println("failed; not connected!");
 }
 
 
@@ -556,9 +589,60 @@ void init_mDNS() {
 String processor(const String& var) {
     if (var == "HOSTNAME")
         return hostName + ".local";
-    else if (var == "UPTIME")
-        return uptime_formatter::getUptime();
-    else if (var == "RECVPACKETS") {
+    else if (var == "D1STATS") {
+        String s = "";
+        s += "<li>Uptime: " + uptime_formatter::getUptime() + "</li>";
+        s += "<li>Free memory: ";
+        s += ESP.getFreeHeap();
+        s += " bytes (";
+        s += ESP.getFreeHeap() / (double)startupFreeHeap * 100;
+        s += "&#37; of startup)</li>";
+        s += "<li>MAC address: " + WiFi.macAddress() + "</li>";
+
+        return s;
+    } else if (var == "RFM69STATS") {
+        String s = "";
+        s += "<li>Frequency: ";
+        s += radio.getFrequency() / 1000000;
+        s += "MHz</li>";
+        s += "<li>Network ID: ";
+        s += NETWORKID;
+        s += "</li>";
+        s += "<li>Node ID: ";
+        s += NODEID;
+        s += "</li>";
+        s += "<li>Power level: ";
+        s += -18 + radio.getPowerLevel();
+        s += "dBm</li>";
+        s += "<li>Temperature: ";
+        s += radio.readTemperature();
+        s += "C</li>";
+
+        return s;
+    } else if (var == "MQTTSTATS") {
+        String s = "";
+        s += "<li>Connected: ";
+        s += client.connected() ? "yes" : "no";
+        s += "</li>";
+        s += "<li>Server: ";
+        s += mqtt_server;
+        s += "</li>";
+        s += "<li>Inbound messages: ";
+        s += mqttMessagesIn;
+        s += "</li>";
+        s += "<li>Outbound messages: ";
+        s += mqttMessagesOut;
+        s += "</li>";
+#ifdef PUSH_RSSI_TO_MQTT
+        s += "<li>Send RSSI to MQTT: yes</li>";
+#else
+        s += "<li>Send RSSI to MQTT: no</li>";
+#endif
+
+        return s;
+    } else if (var == "NUMSTOREDPACKETS") {
+        return String(NUM_PACKETS_TO_STORE);
+    } else if (var == "RECVPACKETS") {
         String s = "";
         // max data length is 61, so we allocate 2x61 + 1 for string termination
         char  hexData[123];
@@ -567,12 +651,12 @@ String processor(const String& var) {
         unsigned long curTime = millis();
 
         int8_t c = lastPacket;
-        for (uint8_t i = 0; i < 5; i++) {
+        for (uint8_t i = 0; i < NUM_PACKETS_TO_STORE; i++) {
             if (recvPackets[c].valid) {
                 s += "<tr>";
 
-                s += "<td>-";
-                s += ((curTime - recvPackets[c].ts) / 1000);
+                s += "<td>";
+                s += (((float)curTime - recvPackets[c].ts) / 1000);
                 s += " s</td>";
 
                 s += "<td>";
@@ -616,7 +700,7 @@ String processor(const String& var) {
             // move on to the previous packet
             c--;
             if (c < 0)
-                c = 4;
+                c = NUM_PACKETS_TO_STORE - 1;
         }
 
         return s;
@@ -640,8 +724,23 @@ void init_webServer() {
     });
 
     // route for the stylesheet
+    // no need for the 'processor' as we have no tokens to replace
+    // (plus it interferes with the % signs!)
     server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/style.css", String(), false, processor);
+        request->send(SPIFFS, "/style.css", String(), false);
+    });
+
+    // favicon entries
+    server.on("/favicon-16x16.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon-16x16.png", String(), false);
+    });
+
+    server.on("/favicon-32x32.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon-32x32.png", String(), false);
+    });
+
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon.ico", String(), false);
     });
 
     // Start HTTP server
@@ -691,6 +790,9 @@ void setup() {
 
     Serial.println("[SETUP] Complete");
     Serial.println("--------------------------------");
+
+    // save free heap
+    startupFreeHeap = ESP.getFreeHeap();
 }
 
 
@@ -698,26 +800,39 @@ void setup() {
  *  Main loop
  */
 void loop() {
+#ifdef LOG_LOOP_TIMES
+    loopTimeStart = millis();
+#endif
     // call MQTT loop to handle active connection
     if (!client.connected())
         mqtt_reconnect();
-    client.loop();
+    else
+        client.loop();
 
     // handle OTA stuff
     // this updates mDNS as well
     ArduinoOTA.handle();
 
     // gateway "HeartBeat" blink LED/debug output regularly to show we're still ticking
-    if ( millis() - last_check_millis > HB ) {
-        Serial.print (".");
+    if ( millis() - last_check_millis > SYSTEM_HEARTBEAT_INTERVAL ) {
+        Serial.println("[SYS  ] Heartbeat");
         last_check_millis = millis();
+#ifdef LOG_LOOP_TIMES
+        Serial.print("[SYS  ] Avg loop time: ");
+        Serial.print(loopTimeAverage);
+        Serial.print("ms, min: ");
+        Serial.print(loopTimeMin);
+        Serial.print("ms, max: ");
+        Serial.print(loopTimeMax);
+        Serial.print("ms, loops: ");
+        Serial.println(loopCounter);
 
-        // line wrap handler for debug output
-        cur_width++;
-        if (cur_width > max_width) {
-            Serial.println();
-            cur_width = 0;
-        }
+        loopCounter = 0;
+        loopTimeAverage = 0;
+        loopTimeMax = 0;
+        loopTimeMin = 0;
+        loopStatReset = true;
+#endif
     }
  
     // handle any serial input
@@ -800,4 +915,22 @@ void loop() {
             pixels.setPixelColor(RADIO_STATUS_NEOPX_POSITION, pixels.Color(0, 0, 0));
             pixels.show();
         }
+
+#ifdef LOG_LOOP_TIMES
+    if (!loopStatReset) {
+        loopTime = millis() - loopTimeStart;
+
+        //loopTimeAverage = (loopTimeAverage * loopCounter + loopTime) / 2;
+        loopTimeAverage = (loopTimeAverage * loopCounter + loopTime) / (loopCounter + 1);
+
+        if (loopTime < loopTimeMin || loopTimeMin == 0)
+            loopTimeMin = loopTime;
+
+        if (loopTime > loopTimeMax || loopTimeMax == 0)
+            loopTimeMax = loopTime;
+
+        loopCounter++;
+    } else
+        loopStatReset = false;
+#endif
 }

@@ -1,7 +1,13 @@
 <html>
     <head>
+        <meta charset="UTF-8">
+
         <title>%HOSTNAME%</title>
         <link rel="stylesheet" href="style.css">
+
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+        
         <script>
             function hexToUInt16(hexNum) {
                 return parseInt(hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
@@ -71,15 +77,16 @@
     </head>
     
     <body>
-        <center>
-            <h1>%HOSTNAME%</h1>
-            <h3>RFM69 to MQTT bridge</h3>
-        </center>
-        <p>Uptime: %UPTIME%</p>
-        <p>Last 5 packets: 
-            <table style="width:100%%">
+        <div class="content">
+            <center>
+                <h1>%HOSTNAME%</h1>
+                <h3>RFM69 to MQTT bridge</h3>
+            </center>
+
+            <p>Last %NUMSTOREDPACKETS% packets:</p>
+            <table>
                 <tr>
-                    <th>TS</th>
+                    <th>Age</th>
                     <th>Sender</th>
                     <th>Data len</th>
                     <th>Data</th>
@@ -88,6 +95,27 @@
                 </tr>
                 %RECVPACKETS%
             </table>
-        </p>
+
+            <div class="left">
+                <h4>D1 mini Pro</h4>
+                <ul>
+                    %D1STATS%
+                </ul>
+            </div>
+
+            <div class="left">
+                <h4>RFM69</h4>
+                <ul>
+                    %RFM69STATS%
+                </ul>
+            </div>
+
+            <div class="left">
+                <h4>MQTT</h4>
+                <ul>
+                    %MQTTSTATS%
+                </ul>
+            </div>
+        </div>
     </body>
 </html>
