@@ -18,39 +18,39 @@
             }
 
             function decodeSensorData(hex) {
-                var typeId = hex.substring(0, 4);
+                var typeId = hex.substring(0, 2);
                 var retVal;
 
-                if (typeId == "0001") {
+                if (typeId == "01") {
                     retVal = "type: " + typeId + " (power - single channel)<br/>power1: " +
-                    hexToUInt16(hex.substring(4, 8)) + "W<br/>Vrms: " +
-                    hexToUInt16(hex.substring(8, 12)) / 10 + "V";
-                } else if (typeId == "0002") {
+                    hexToUInt16(hex.substring(2, 6)) + "W<br/>Vrms: " +
+                    hexToUInt16(hex.substring(6, 10)) / 10 + "V";
+                } else if (typeId == "02") {
                     retVal = "type: " + typeId + " (power - dual channel)<br/>power1: " +
-                    hexToUInt16(hex.substring(4, 8)) + "W<br/>power2: "+
-                    hexToUInt16(hex.substring(8, 12)) + "W<br/>Vrms: " +
-                    hexToUInt16(hex.substring(12, 16)) / 10 + "V";
-                } else if (typeId == "0003") {
+                    hexToUInt16(hex.substring(2, 6)) + "W<br/>power2: "+
+                    hexToUInt16(hex.substring(6, 10)) + "W<br/>Vrms: " +
+                    hexToUInt16(hex.substring(10, 14)) / 10 + "V";
+                } else if (typeId == "03") {
                     retVal = "type: " + typeId + " (power - quad channel)<br/>power1: " +
-                    hexToUInt16(hex.substring(4, 8)) + "W<br/>power2: "+
-                    hexToUInt16(hex.substring(8, 12)) + "W<br/>power3: " +
-                    hexToUInt16(hex.substring(12, 16)) + "W<br/>power4: " +
-                    hexToUInt16(hex.substring(16, 20)) + "W<br/>Vrms: " +
-                    hexToUInt16(hex.substring(20, 24)) / 10 + "V";
-                } else if (typeId == "0004") {
+                    hexToUInt16(hex.substring(2, 6)) + "W<br/>power2: "+
+                    hexToUInt16(hex.substring(6, 10)) + "W<br/>power3: " +
+                    hexToUInt16(hex.substring(10, 14)) + "W<br/>power4: " +
+                    hexToUInt16(hex.substring(14, 18)) + "W<br/>Vrms: " +
+                    hexToUInt16(hex.substring(18, 22)) / 10 + "V";
+                } else if (typeId == "04") {
                     retVal = "type: " + typeId + " (temp / humidity)<br/>temp: " +
-                    hexToUInt16(hex.substring(4, 8)) / 100 + "C<br/>humidity: " +
-                    hexToUInt16(hex.substring(8, 12)) / 100 + "%<br/>Vbatt: " +
-                    hexToUInt16(hex.substring(12, 16)) + "mV";
-                } else if (typeId == "0005") {
+                    hexToUInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
+                    hexToUInt16(hex.substring(6, 10)) / 100 + "%<br/>Vbatt: " +
+                    hexToUInt16(hex.substring(10, 14)) + "mV";
+                } else if (typeId == "05") {
                     retVal = "type: " + typeId + " (temp / pressure)<br/>temp: " +
-                    hexToUInt16(hex.substring(4, 8)) / 100 + "C<br/>humidity: " +
-                    hexToUInt32(hex.substring(8, 16)) / 100 + "mbar<br/>Vbatt: " +
-                    hexToUInt16(hex.substring(16, 20)) + "mV";
-                } else if (typeId == "0006") {
+                    hexToUInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
+                    hexToUInt32(hex.substring(6, 14)) / 100 + "mbar<br/>Vbatt: " +
+                    hexToUInt16(hex.substring(14, 28)) + "mV";
+                } else if (typeId == "06") {
                     retVal = "type: " + typeId + " (trigger)<br/>trigger: " +
-                    hexToUInt16(hex.substring(4, 6)) + "<br/>Vbatt: " +
-                    hexToUInt16(hex.substring(6, 10)) + "mV";
+                    hexToUInt16(hex.substring(2, 4)) + "<br/>Vbatt: " +
+                    hexToUInt16(hex.substring(4, 8)) + "mV";
                 } else {
                     retVal = "type: " + typeId + " (unknown)<br/>payload: " + hex.substring(4);
                 }
@@ -66,7 +66,7 @@
                 id = "rtt" + x;
                 el = document.getElementById(id);
                 el.style.display = "block";
-                el.innerHTML = "sender: " + hexData.substring(0, 2) + "<br/>" + decodeSensorData(hexData.substring(2));
+                el.innerHTML = "sender: " + hexData.substring(2, 4) + hexData.substring(0, 2) + "<br/>" + decodeSensorData(hexData.substring(4));
             }
 
             function tth(x) {

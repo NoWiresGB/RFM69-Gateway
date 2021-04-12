@@ -111,7 +111,7 @@ uint8_t lastPacket = -1;
 // add WiFi MAC address to the publish topic
 #define ADD_MAC_TO_MQTT_TOPIC
 // push RSSI to MQTT (will move to configurable option later)
-#define PUSH_RSSI_TO_MQTT
+// #define PUSH_RSSI_TO_MQTT
 
 //*********************************************************************************************
 // RFM69 stuff
@@ -660,6 +660,21 @@ String processor(const String& var) {
                 s += " s</td>";
 
                 s += "<td>";
+                // check if we can add an icon to the sensor
+                if (recvPackets[c].dataLen > 3) {
+                    uint8_t sensorType = recvPackets[c].data[2];
+
+                    if (sensorType == 1 || sensorType == 2 || sensorType == 3)
+                        s += "<img src=\"power.png\">";
+                    else if (sensorType == 4)
+                        s += "<img src=\"temperature.png\">";
+                    else if (sensorType == 5)
+                        s += "<img src=\"pressure.png\">";
+                    else if (sensorType == 6)
+                        s += "<img src=\"trigger.png\">";
+                    else
+                        s += "<img src=\"question.png\">";
+                }
                 s += recvPackets[c].senderId;
                 s += "</td>";
 
@@ -741,6 +756,27 @@ void init_webServer() {
 
     server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/favicon.ico", String(), false);
+    });
+
+    // sensor icons
+    server.on("/power.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/power.png", String(), false);
+    });
+
+    server.on("/temperature.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/temperature.png", String(), false);
+    });
+
+    server.on("/pressure.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/pressure.png", String(), false);
+    });
+
+    server.on("/trigger.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/trigger.png", String(), false);
+    });
+
+    server.on("/question.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/question.png", String(), false);
     });
 
     // Start HTTP server
