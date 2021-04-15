@@ -13,6 +13,13 @@
                 return parseInt(hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
             }
 
+            function hexToInt16(hexNum) {
+                n = parseInt(hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
+                if ((n & 0x8000) > 0)
+                    n = n - 0x10000;
+                return n;
+            }
+
             function hexToUInt32(hexNum) {
                 return parseInt(hexNum.substring(6, 8) + hexNum.substring(4, 6) + hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
             }
@@ -39,12 +46,12 @@
                     hexToUInt16(hex.substring(18, 22)) / 10 + "V";
                 } else if (typeId == "04") {
                     retVal = "type: " + typeId + " (temp / humidity)<br/>temp: " +
-                    hexToUInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
+                    hexToInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
                     hexToUInt16(hex.substring(6, 10)) / 100 + "%<br/>Vbatt: " +
                     hexToUInt16(hex.substring(10, 14)) + "mV";
                 } else if (typeId == "05") {
                     retVal = "type: " + typeId + " (temp / pressure)<br/>temp: " +
-                    hexToUInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
+                    hexToInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
                     hexToUInt32(hex.substring(6, 14)) / 100 + "mbar<br/>Vbatt: " +
                     hexToUInt16(hex.substring(14, 28)) + "mV";
                 } else if (typeId == "06") {
