@@ -86,6 +86,7 @@ String mqtt_topic = "";
 String msg = "";
 unsigned long mqttMessagesIn = 0;
 unsigned long mqttMessagesOut = 0;
+unsigned long mqttReconnects = 0;
 unsigned long mqttLastReconnectAttempt = 0;
 bool mqttLoggedBackoffEvent = false;
 
@@ -444,6 +445,9 @@ void mqtt_reconnect() {
 
         Serial.println("[MQTT ] Not connected! Attempting new connection");
 
+        // increase the reconnect counter
+        mqttReconnects++;
+
         if (client.connect(mqtt_clientId.c_str())) {
             client.loop();
             Serial.println("[MQTT ] Reconnected successfully");
@@ -632,6 +636,9 @@ String processor(const String& var) {
         s += "</li>";
         s += "<li>Outbound messages: ";
         s += mqttMessagesOut;
+        s += "</li>";
+        s += "<li>Reconnects: ";
+        s += mqttReconnects;
         s += "</li>";
 #ifdef PUSH_RSSI_TO_MQTT
         s += "<li>Send RSSI to MQTT: yes</li>";
