@@ -76,6 +76,8 @@
     String mqtt_server = "192.168.0.200";
 #endif
 int mqtt_port = 1883;
+String mqtt_username = "mqtt";
+String mqtt_password = "mqtt";
 String mqtt_clientId = "";
 String mqtt_topic = "";
 #ifndef DEV_BUILD
@@ -448,7 +450,7 @@ void mqtt_reconnect() {
         // increase the reconnect counter
         mqttReconnects++;
 
-        if (client.connect(mqtt_clientId.c_str())) {
+        if (client.connect(mqtt_clientId.c_str(), mqtt_username.c_str(), mqtt_password.c_str())) {
             client.loop();
             Serial.println("[MQTT ] Reconnected successfully");
         } else
