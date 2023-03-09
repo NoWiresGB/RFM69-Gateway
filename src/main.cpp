@@ -67,6 +67,11 @@
 #include <uptime.h>
 #include <uptime_formatter.h>
 
+// JSON
+#include <ArduinoJson.h>
+
+StaticJsonDocument<2048> jsonDoc;
+
 #define SERIAL_BAUD 115200
 
 // MQTT settings
@@ -171,6 +176,9 @@ byte breathingLedStatus = STATUS_NEOPX_OFF;
 unsigned long radioStatusOnTime = 0;
 byte radioLedStatus = STATUS_RADIO_NEOPX_OFF;
 
+// flag to decide if we need to notify websocket clients about newly received measurements
+bool radioPacketReceived = false;
+
 // colour of the radio activity LED
 uint32_t radioActivityLEDColour = pixels.Color(16, 0, 8);
 
@@ -213,6 +221,8 @@ PubSubClient client(espClient);
 // HTTP server
 AsyncWebServer server(80);
 DNSServer dns;
+// WS serveer
+AsyncWebSocket ws("/ws");
 
 // buffer to dump radio data into
 // max data length is 61, so we allocate 2x61 + 1 for string termination
@@ -297,7 +307,7 @@ void init_OTA() {
     });
 
     ArduinoOTA.onError([](ota_error_t error) {
-        char buf[16];
+        char buf[32];
         sprintf(buf, "[OTA  ] Error[%u]: ", error);
         Serial.println(buf);
         if (error == OTA_AUTH_ERROR)
@@ -365,6 +375,7 @@ void init_wifi() {
     Serial.println("[WIFI ] Setup begin");
 
     // start WiFi auto configuration
+    WiFi.persistent(true); 
     AsyncWiFiManager wifiManager(&server, &dns);;
     wifiManager.autoConnect("RFM69-Gw_AutoConfig");
 
@@ -527,6 +538,9 @@ void handleRadioReceive() {
     radioStatusOnTime = millis();
     radioLedStatus = STATUS_RADIO_NEOPX_ON;
 
+    // set the flag that will notify websocket clients
+    radioPacketReceived = true;
+
     // output info on received radio data
     Serial.print("[RFM96] RCVD [Node:");
     Serial.print(recvPackets[lastPacket].senderId, DEC);
@@ -597,8 +611,8 @@ String processor(const String& var) {
         return hostName + ".local";
     else if (var == "D1STATS") {
         String s = "";
-        s += "<li>Uptime: " + uptime_formatter::getUptime() + "</li>";
-        s += "<li>Free memory: ";
+        s += "<li id=\"li-uptime\">Uptime: " + uptime_formatter::getUptime() + "</li>";
+        s += "<li id=\"li-freemem\">Free memory: ";
         s += ESP.getFreeHeap();
         s += " bytes (";
         s += ESP.getFreeHeap() / (double)startupFreeHeap * 100;
@@ -627,19 +641,19 @@ String processor(const String& var) {
         return s;
     } else if (var == "MQTTSTATS") {
         String s = "";
-        s += "<li>Connected: ";
+        s += "<li id=\"li-mqtt-connected\">Connected: ";
         s += client.connected() ? "yes" : "no";
         s += "</li>";
         s += "<li>Server: ";
         s += mqtt_server;
         s += "</li>";
-        s += "<li>Inbound messages: ";
+        s += "<li id=\"li-mqtt-messages-in\">Inbound messages: ";
         s += mqttMessagesIn;
         s += "</li>";
-        s += "<li>Outbound messages: ";
+        s += "<li id=\"li-mqtt-messages-out\">Outbound messages: ";
         s += mqttMessagesOut;
         s += "</li>";
-        s += "<li>Reconnects: ";
+        s += "<li id=\"li-mqtt-reconnects\">Reconnects: ";
         s += mqttReconnects;
         s += "</li>";
 #ifdef PUSH_RSSI_TO_MQTT
@@ -662,7 +676,9 @@ String processor(const String& var) {
         int8_t c = lastPacket;
         for (uint8_t i = 0; i < NUM_PACKETS_TO_STORE; i++) {
             if (recvPackets[c].valid) {
-                s += "<tr>";
+                s += "<tr id=\"pk-";
+                s += i;
+                s += "\">";
 
                 s += "<td>";
                 s += (((float)curTime - recvPackets[c].ts) / 1000);
@@ -719,6 +735,12 @@ String processor(const String& var) {
                 s += "</td>";
 
                 s += "</tr>";
+            } else {
+                // not a valid packet; we still display the row
+                s += "<tr id=\"pk-";
+                s += i;
+                s += "\"><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>";
+
             }
 
             // move on to the previous packet
@@ -796,6 +818,63 @@ void init_webServer() {
 
 
 /*
+ *  Send the same messages to all WS clients
+ */
+void notifyClients() {
+  //ws.textAll(String(ledState));
+}
+
+
+/*
+ *  Deal with received WS messages
+*/
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = 0;
+    if (strcmp((char*)data, "toggle") == 0) {
+      //ledState = !ledState;
+      notifyClients();
+    }
+  }
+}
+
+
+/*
+ *  Websocket callback
+ */
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+    switch (type) {
+      case WS_EVT_CONNECT:
+        Serial.printf("[WS   ] WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+        break;
+      case WS_EVT_DISCONNECT:
+        Serial.printf("[WS   ] WebSocket client #%u disconnected\n", client->id());
+        break;
+      case WS_EVT_DATA:
+        handleWebSocketMessage(arg, data, len);
+        break;
+      case WS_EVT_PONG:
+        Serial.printf("[WS   ] Websocket pong from client #%u\n", client->id());
+        break;
+      case WS_EVT_ERROR:
+        break;
+  }
+}
+
+
+/*
+ *  Setup function - called once
+ */
+void init_Websocket() {
+    ws.onEvent(onEvent);
+    server.addHandler(&ws);
+
+    Serial.println("[WS   ] Websocket initialised");
+}
+
+/*
  *  Setup function - called once
  */
 void setup() {
@@ -830,6 +909,9 @@ void setup() {
     // register on mDNS
     init_mDNS();
 
+    // init Websocket
+    init_Websocket();
+
     // start the webserver
     init_webServer();
 
@@ -862,6 +944,34 @@ void loop() {
     if ( millis() - last_check_millis > SYSTEM_HEARTBEAT_INTERVAL ) {
         Serial.println("[SYS  ] Heartbeat");
         last_check_millis = millis();
+
+        // update websocket clients
+        if (ws.count() > 0) {
+            uint32_t freeHeap = ESP.getFreeHeap();
+
+            String s = "";
+            jsonDoc.clear();
+
+            // d1 stats
+            jsonDoc["d1stats"]["uptime"] = uptime_formatter::getUptime();
+            s += freeHeap;
+            s += " bytes (";
+            s += freeHeap / (double)startupFreeHeap * 100;
+            s += "&#37; of startup)";
+            jsonDoc["d1stats"]["memstat"] = s;
+
+            // mqtt stats
+            jsonDoc["mqttstats"]["connected"] = client.connected() ? "yes" : "no";
+            jsonDoc["mqttstats"]["messages-in"] = mqttMessagesIn;
+            jsonDoc["mqttstats"]["messages-out"] = mqttMessagesOut;
+            jsonDoc["mqttstats"]["reconnects"] = mqttReconnects;
+
+            // radio packets only sent when a new one is received
+            s = "";
+            serializeJson(jsonDoc, s);
+
+            ws.textAll(s);
+        }
 #ifdef LOG_LOOP_TIMES
         Serial.print("[SYS  ] Avg loop time: ");
         Serial.print(loopTimeAverage);
@@ -878,6 +988,74 @@ void loop() {
         loopTimeMin = 0;
         loopStatReset = true;
 #endif
+    }
+
+    // notify websocket clients about new radio packets
+    if (radioPacketReceived) {
+        // also send WS ping
+        if (ws.count() > 0) {
+            uint32_t freeHeap = ESP.getFreeHeap();
+
+            String s = "";
+            jsonDoc.clear();
+
+            // d1 stats
+            jsonDoc["d1stats"]["uptime"] = uptime_formatter::getUptime();
+            s += freeHeap;
+            s += " bytes (";
+            s += freeHeap / (double)startupFreeHeap * 100;
+            s += "&#37; of startup)";
+            jsonDoc["d1stats"]["memstat"] = s;
+
+            // mqtt stats
+            jsonDoc["mqttstats"]["connected"] = client.connected() ? "yes" : "no";
+            jsonDoc["mqttstats"]["messages-in"] = mqttMessagesIn;
+            jsonDoc["mqttstats"]["messages-out"] = mqttMessagesOut;
+            jsonDoc["mqttstats"]["reconnects"] = mqttReconnects;
+
+            // radio packets (though this should be refreshed as soon as we get a packet)
+            // max data length is 61, so we allocate 2x61 + 1 for string termination
+            char  hexData[123];
+
+            // get current timestamp
+            unsigned long curTime = millis();
+
+            int8_t c = lastPacket;
+            int tInt;
+            for (uint8_t i = 0; i < NUM_PACKETS_TO_STORE; i++) {
+                if (recvPackets[c].valid) {
+                    // this could probably be simplified into one line
+                    tInt = (int)(((double)curTime - recvPackets[c].ts) / 10);
+                    jsonDoc["packets"][i]["age"] = tInt / 100.0;
+                    uint8_t ptr = 0;
+                    for (uint8_t i = 0; i < recvPackets[c].dataLen; i++) {
+                        hexData[ptr++] = hexDigit(recvPackets[c].data[i] >> 4);
+                        hexData[ptr++] = hexDigit(recvPackets[c].data[i]);
+                    }
+                    hexData[ptr] = '\0';
+                    jsonDoc["packets"][i]["data"] =  String(hexData);
+                    jsonDoc["packets"][i]["ackreq"] = recvPackets[c].ackReq ? "yes" : "no";
+                    jsonDoc["packets"][i]["rssi"] = recvPackets[c].rssi;
+                } else {
+                    // not a valid packet
+                    // we'll set the age to be -1
+                    jsonDoc["packets"][i]["age"] = -1;
+                }
+
+                // move on to the previous packet
+                c--;
+                if (c < 0)
+                    c = NUM_PACKETS_TO_STORE - 1;
+            }
+
+            s = "";
+            serializeJson(jsonDoc, s);
+
+            ws.textAll(s);
+        }
+
+        // clear the flag
+        radioPacketReceived = false;
     }
  
     // handle any serial input
