@@ -14,11 +14,15 @@
     margin-right: 1%;
     padding-left: 1%;
     padding-right: 1%;
+    border-radius: 10px;
+    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2);
 }
 
 table {
     border-collapse: collapse;
     width: 100%;
+    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2);
+    margin-bottom: 10px;
 }
 
 td, th {
@@ -58,4 +62,14 @@ h1 { color: #62addf; }
     color: rgb(109, 0, 0);
     top: 10px;
     left: 10px;
+}
+
+.dot {
+    height: 20px;
+    width: 20px;
+    background-color: rgb(255, 51, 51);
+    box-shadow: 0px 0px 5px rgba(128, 0, 0, 0.5);
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 10px;
 }

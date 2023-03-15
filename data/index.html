@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html>
     <head>
         <meta charset="UTF-8">
@@ -9,6 +10,129 @@
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
         
         <script>
+            var gateway = `ws://${window.location.hostname}/ws`;
+            var websocket;
+            var wsPingId;
+            window.addEventListener('load', onLoad);
+
+            function initWebSocket() {
+                console.log('Trying to open a WebSocket connection...');
+                websocket = new WebSocket(gateway);
+                websocket.onopen    = onOpen;
+                websocket.onclose   = onClose;
+                websocket.onmessage = onMessage;
+                websocket.onerror   = onError;
+            }
+
+            function wsPinger() {
+                if (websocket.readyState == websocket.OPEN) {
+                    websocket.send('{"ping":{"noop":0}}');
+                    console.log('Sent ping');
+                } else {
+                    console.log('Cannot send ping; not connected');
+                }
+            }
+
+            function onOpen(event) {
+                console.log('Connection opened');
+
+                // set the status dot to green
+                document.getElementById("status_dot").style.backgroundColor = "rgb(51, 204, 51)";
+                document.getElementById("status_dot").style.boxShadow = "0px 0px 5px rgba(0, 128, 0, 0.5)";
+
+                // send a periodic ping message
+                wsPingId = setInterval(wsPinger, 15000);
+            }
+
+            function onClose(event) {
+                console.log('Connection closed');
+
+                // set the status dot to red
+                document.getElementById("status_dot").style.backgroundColor = "rgb(255, 51, 51)";
+                document.getElementById("status_dot").style.boxShadow = "0px 0px 5px rgba(128, 0, 0, 0.5)";
+
+                console.log('Reopening connection');
+
+                // keep try to open the connection
+                setTimeout(initWebSocket, 2000);
+            }
+
+            function onError(event) {
+                console.log('Websocket error occured');
+                websocket.close();
+            }
+
+            function onMessage(event) {
+                //console.log('Message from WS server ', event.data);
+
+                var myObj = JSON.parse(event.data);
+                for (const k in myObj) {
+                    if (k == "d1stats") {
+                        document.getElementById('li-uptime').innerHTML = "Uptime: " + myObj[k]["uptime"];
+                        document.getElementById('li-freemem').innerHTML = "Free memory: " + myObj[k]["memstat"];
+                    } else if (k == "mqttstats") {
+                        document.getElementById('li-mqtt-connected').innerHTML = "Connected: " + myObj[k]["connected"];
+                        document.getElementById('li-mqtt-messages-in').innerHTML = "Inbound messages: " + myObj[k]["messages-in"];
+                        document.getElementById('li-mqtt-messages-out').innerHTML = "Outbound messages: " + myObj[k]["messages-out"];
+                        document.getElementById('li-mqtt-reconnects').innerHTML = "Reconnects: " + myObj[k]["reconnects"];
+                    } else if (k == "packets") {
+                        // iterate through the packets
+                        eid  = "";
+                        for(i = 0; i<myObj[k].length; i++) {
+                            eid = "pk-" + i;
+                            if (myObj[k][i]["age"] != -1) {
+                            	sender = myObj[k][i]["data"].substring(2, 4) + myObj[k][i]["data"].substring(0, 2);
+                                sensorType = parseInt(myObj[k][i]["data"].substring(4, 6), 16);
+
+                                ih = "<td>";
+                                ih += myObj[k][i]["age"];
+                                ih += " s</td><td>";
+
+                                if (sensorType == 1 || sensorType == 2 || sensorType == 3)
+                                    ih += "<img src=\"power.png\">";
+                                else if (sensorType == 4)
+                                    ih += "<img src=\"temperature.png\">";
+                                else if (sensorType == 5)
+                                    ih += "<img src=\"pressure.png\">";
+                                else if (sensorType == 6)
+                                    ih += "<img src=\"trigger.png\">";
+                                else
+                                    ih += "<img src=\"question.png\">";
+
+								ih += parseInt(sender, 16);
+                                ih += "</td><td>";
+                                ih += myObj[k][i]["data"].length / 2;
+                                ih += "</td>";
+                                ih += "<td onmouseover=\"tts(";
+                                ih += i;
+                                ih += ")\" onmouseout=\"tth(";
+                                ih += i;
+                                ih += ")\" class=\"cwc\" id=\"rc";
+                                ih += i;
+                                ih += "\">";
+                                ih += myObj[k][i]["data"];
+                                ih += "<span class=\"cc\" id=\"rtt";
+                                ih += i;
+                                ih += "\">x</span>";
+                                ih += "</td><td>";
+                                ih += myObj[k][i]["ackreq"];
+                                ih += "</td><td>";
+                                ih += myObj[k][i]["rssi"];
+                                ih += "</td></tr>";
+
+                            } else {
+                                ih = "<td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td>"
+                            }
+                            document.getElementById(eid).innerHTML = ih;
+                        }
+                    }
+                }
+            }
+
+            function onLoad(event) {
+                initWebSocket();
+            }
+
             function hexToUInt16(hexNum) {
                 return parseInt(hexNum.substring(2, 4) + hexNum.substring(0, 2), 16);
             }
@@ -86,7 +210,7 @@
     <body>
         <div class="content">
             <center>
-                <h1>%HOSTNAME%</h1>
+                <h1>%HOSTNAME%<span class="dot" id="status_dot"></span></h1>
                 <h3>RFM69 to MQTT bridge</h3>
             </center>
 
