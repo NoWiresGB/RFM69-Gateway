@@ -12,22 +12,54 @@
         <script>
             var gateway = `ws://${window.location.hostname}/ws`;
             var websocket;
+            var wsPingId;
             window.addEventListener('load', onLoad);
+
             function initWebSocket() {
                 console.log('Trying to open a WebSocket connection...');
                 websocket = new WebSocket(gateway);
                 websocket.onopen    = onOpen;
                 websocket.onclose   = onClose;
                 websocket.onmessage = onMessage;
+                websocket.onerror   = onError;
+            }
+
+            function wsPinger() {
+                if (websocket.readyState == websocket.OPEN) {
+                    websocket.send('{"ping":{"noop":0}}');
+                    console.log('Sent ping');
+                } else {
+                    console.log('Cannot send ping; not connected');
+                }
             }
 
             function onOpen(event) {
                 console.log('Connection opened');
+
+                // set the status dot to green
+                document.getElementById("status_dot").style.backgroundColor = "rgb(51, 204, 51)";
+                document.getElementById("status_dot").style.boxShadow = "0px 0px 5px rgba(0, 128, 0, 0.5)";
+
+                // send a periodic ping message
+                wsPingId = setInterval(wsPinger, 15000);
             }
 
             function onClose(event) {
                 console.log('Connection closed');
+
+                // set the status dot to red
+                document.getElementById("status_dot").style.backgroundColor = "rgb(255, 51, 51)";
+                document.getElementById("status_dot").style.boxShadow = "0px 0px 5px rgba(128, 0, 0, 0.5)";
+
+                console.log('Reopening connection');
+
+                // keep try to open the connection
                 setTimeout(initWebSocket, 2000);
+            }
+
+            function onError(event) {
+                console.log('Websocket error occured');
+                websocket.close();
             }
 
             function onMessage(event) {
@@ -178,7 +210,7 @@
     <body>
         <div class="content">
             <center>
-                <h1>%HOSTNAME%</h1>
+                <h1>%HOSTNAME%<span class="dot" id="status_dot"></span></h1>
                 <h3>RFM69 to MQTT bridge</h3>
             </center>
 
