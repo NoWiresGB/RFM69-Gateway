@@ -175,7 +175,7 @@
                     hexToUInt16(hex.substring(10, 14)) + "mV";
                 } else if (typeId == "05") {
                     retVal = "type: " + typeId + " (temp / pressure)<br/>temp: " +
-                    hexToInt16(hex.substring(2, 6)) / 100 + "C<br/>humidity: " +
+                    hexToInt16(hex.substring(2, 6)) / 100 + "C<br/>pressure: " +
                     hexToUInt32(hex.substring(6, 14)) / 100 + "mbar<br/>Vbatt: " +
                     hexToUInt16(hex.substring(14, 28)) + "mV";
                 } else if (typeId == "06") {
