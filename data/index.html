@@ -154,19 +154,19 @@
 
                 if (typeId == "01") {
                     retVal = "type: " + typeId + " (power - single channel)<br/>power1: " +
-                    hexToUInt16(hex.substring(2, 6)) + "W<br/>Vrms: " +
+                    hexToInt16(hex.substring(2, 6)) + "W<br/>Vrms: " +
                     hexToUInt16(hex.substring(6, 10)) / 10 + "V";
                 } else if (typeId == "02") {
                     retVal = "type: " + typeId + " (power - dual channel)<br/>power1: " +
-                    hexToUInt16(hex.substring(2, 6)) + "W<br/>power2: "+
-                    hexToUInt16(hex.substring(6, 10)) + "W<br/>Vrms: " +
+                    hexToInt16(hex.substring(2, 6)) + "W<br/>power2: "+
+                    hexToInt16(hex.substring(6, 10)) + "W<br/>Vrms: " +
                     hexToUInt16(hex.substring(10, 14)) / 10 + "V";
                 } else if (typeId == "03") {
                     retVal = "type: " + typeId + " (power - quad channel)<br/>power1: " +
-                    hexToUInt16(hex.substring(2, 6)) + "W<br/>power2: "+
-                    hexToUInt16(hex.substring(6, 10)) + "W<br/>power3: " +
-                    hexToUInt16(hex.substring(10, 14)) + "W<br/>power4: " +
-                    hexToUInt16(hex.substring(14, 18)) + "W<br/>Vrms: " +
+                    hexToInt16(hex.substring(2, 6)) + "W<br/>power2: "+
+                    hexToInt16(hex.substring(6, 10)) + "W<br/>power3: " +
+                    hexToInt16(hex.substring(10, 14)) + "W<br/>power4: " +
+                    hexToInt16(hex.substring(14, 18)) + "W<br/>Vrms: " +
                     hexToUInt16(hex.substring(18, 22)) / 10 + "V";
                 } else if (typeId == "04") {
                     retVal = "type: " + typeId + " (temp / humidity)<br/>temp: " +
